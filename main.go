@@ -743,8 +743,17 @@ func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
 		}
 	}
 
+	// Determine account label for display
+	accountLabel := "Claude"
+	switch snapshot.AccountType {
+	case AccountTypeMax:
+		accountLabel = "Max"
+	case AccountTypePro:
+		accountLabel = "Pro"
+	}
+
 	return &HyprPanelOutput{
-		Text:    fmt.Sprintf("%.0f%%", sessionUsed),
+		Text:    fmt.Sprintf("%.0f%% %s", sessionUsed, accountLabel),
 		Alt:     level,
 		Class:   level,
 		Tooltip: strings.Join(tooltipLines, "\n"),

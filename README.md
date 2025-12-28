@@ -206,7 +206,7 @@ Add to `~/.config/hyprpanel/modules.json`:
           "no_subscription": "💳"
         },
         "truncationSize": 0,
-        "label": "{text} Claude",
+        "label": "{text}",
         "tooltip": "{tooltip}",
         "execute": "claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json",
         "actions": {
