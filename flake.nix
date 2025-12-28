@@ -4,14 +4,18 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    claude-code = {
+      url = "github:sadjow/claude-code-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, claude-code }:
     let
       # Build package for a given system
       mkPackage = pkgs: pkgs.buildGoModule {
         pname = "claude-o-meter";
-        version = "0.1.0";
+        version = "2.0.76";  # Follows claude-code versioning
 
         src = ./.;
 
@@ -30,9 +34,11 @@
       systemAgnostic = {
         homeManagerModules.default = { config, lib, pkgs, ... }:
           let
-            # Import the actual module and pass the default package
+            system = pkgs.stdenv.hostPlatform.system;
+            # Import the actual module and pass the default package and claude-code
             module = import ./nix/hm-module.nix {
               defaultPackage = mkPackage pkgs;
+              claudeCodePackage = claude-code.packages.${system}.default;
             };
           in
           module { inherit config lib pkgs; };

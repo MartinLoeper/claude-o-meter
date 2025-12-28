@@ -1,16 +1,5 @@
 # TODO
 
-## Login Handling
-
-Currently we assume the user is logged in and on the Pro or Max plan. We should:
-
-1. Check this precondition before attempting to parse usage data
-2. Handle the case where the user is not logged in:
-   - Clearly log an error message (e.g., "User not logged in to Claude CLI")
-   - Return a proper error response instead of failing silently
-   - In HyprPanel mode, show an appropriate error state with tooltip explaining the issue
-3. Consider detecting the login prompt output pattern from `claude /usage` and reporting it appropriately
-
 ## D-Bus Integration
 
 Extend the daemon with D-Bus capabilities to allow external tools to trigger immediate queries:
@@ -54,3 +43,13 @@ Currently the color thresholds for HyprPanel output are hardcoded:
    - `--threshold-high` (default: 80)
 2. Add corresponding options to Home Manager module
 3. Allow users to customize when they want to be warned about usage
+
+## Version Update Checklist
+
+When a new Claude Code version is released:
+
+1. Update the `claude-code` flake input to point to the new version
+2. Update `version` in `flake.nix` to match Claude Code version
+3. Test that parsing still works with `claude /usage` output
+4. Update the compatibility matrix in README.md
+5. Tag and release the new version
