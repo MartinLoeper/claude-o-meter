@@ -42,6 +42,11 @@ in
       Unit = {
         Description = "Claude usage metrics daemon";
         After = [ "network.target" ];
+        # Restart service when packages change
+        X-Restart-Triggers = [
+          cfg.package
+          claudeCodePackage
+        ];
       };
 
       Service = {
