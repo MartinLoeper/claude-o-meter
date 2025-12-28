@@ -1,3 +1,5 @@
+{ defaultPackage }:
+
 { config, lib, pkgs, ... }:
 
 let
@@ -9,6 +11,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
+      default = defaultPackage;
+      defaultText = lib.literalExpression "pkgs.claude-o-meter";
       description = "The claude-o-meter package to use";
     };
 

@@ -123,9 +123,9 @@ Add to your Home Manager configuration:
 
   services.claude-o-meter = {
     enable = true;
-    package = inputs.claude-o-meter.packages.${system}.default;
-    interval = "60s";  # How often to query (default: 60s)
-    outputFile = "${config.xdg.cacheHome}/claude-o-meter.json";  # Default location
+    # package = inputs.claude-o-meter.packages.${system}.default;  # Optional, uses flake default
+    # interval = "60s";  # Optional, default: 60s
+    # outputFile = "${config.xdg.cacheHome}/claude-o-meter.json";  # Optional, default location
   };
 }
 ```
