@@ -477,12 +477,10 @@ func parseCostUsage(text string) *CostUsage {
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
-	// Use unbuffer with stdin to handle permission prompt
-	// Send newlines to accept default "Yes, continue" option
-	cmd := exec.CommandContext(ctx, "unbuffer", "-p", "claude", "/usage")
-
-	// Provide stdin with newlines to accept prompts
-	cmd.Stdin = strings.NewReader("\n\n\n\n\n")
+	// Use bash to send delayed input to claude
+	// Sleep briefly to let claude initialize, then send Enter to accept prompt
+	shellCmd := `(sleep 1; echo; sleep 1; echo) | unbuffer -p claude /usage`
+	cmd := exec.CommandContext(ctx, "bash", "-c", shellCmd)
 
 	var stdout bytes.Buffer
 	if debug {
@@ -732,9 +730,13 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			return
 		}
 
-		log.Printf("Query successful: %s quota at %.0f%%",
-			snapshot.AccountType,
-			100-snapshot.Quotas[0].PercentRemaining)
+		if len(snapshot.Quotas) > 0 {
+			log.Printf("Query successful: %s quota at %.0f%%",
+				snapshot.AccountType,
+				100-snapshot.Quotas[0].PercentRemaining)
+		} else {
+			log.Printf("Query returned no quota data")
+		}
 	}
 
 	doQuery()
