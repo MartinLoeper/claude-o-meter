@@ -476,7 +476,8 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 	// Set environment to ensure PTY works without a controlling terminal
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	// Create a new session to work without a controlling terminal (e.g., from cron, systemd)
+	// Create a new session so script works without a controlling terminal,
+	// and set process group so we can kill all children on timeout
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdin = nil
 
@@ -499,8 +500,9 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 	for {
 		select {
 		case <-ctx.Done():
+			// Kill the entire process group to ensure script and its children die
 			if cmd.Process != nil {
-				cmd.Process.Kill()
+				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			}
 			// Check if we got data before timing out
 			output := stdout.String()
@@ -524,10 +526,10 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 			// Check if we have usage data yet
 			output := stdout.String()
 			if strings.Contains(output, "% used") || strings.Contains(output, "% left") {
-				// Give it a moment to finish rendering, then kill
+				// Give it a moment to finish rendering, then kill the process group
 				time.Sleep(300 * time.Millisecond)
 				if cmd.Process != nil {
-					cmd.Process.Kill()
+					syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 				}
 				return stdout.String(), nil
 			}
