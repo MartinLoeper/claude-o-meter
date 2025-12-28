@@ -2,13 +2,40 @@
 
 A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `claude /usage`.
 
+## Why?
+
+Anthropic doesn't provide a public API for querying Claude usage metrics. The author was annoyed by not being able to display Claude usage in [HyprPanel](https://hyprpanel.com/) (a status bar for Hyprland). This tool solves that by scraping the metrics from the Claude CLI and outputting them as JSON, making it easy to integrate with status bars, scripts, and other tools.
+
 ## Installation
+
+### Nix (recommended for NixOS users)
+
+```bash
+# Run directly
+nix run github:MartinLoeper/claude-o-meter
+
+# Or install to profile
+nix profile install github:MartinLoeper/claude-o-meter
+```
+
+In a flake-based NixOS configuration:
+
+```nix
+{
+  inputs.claude-o-meter.url = "github:MartinLoeper/claude-o-meter";
+
+  # Then in your packages:
+  environment.systemPackages = [ inputs.claude-o-meter.packages.${system}.default ];
+}
+```
+
+### Go
 
 ```bash
 go install github.com/MartinLoeper/claude-o-meter@latest
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/MartinLoeper/claude-o-meter.git
@@ -25,13 +52,13 @@ go build -o claude-o-meter .
 
 ```bash
 # Get usage as JSON
-./claude-o-meter
+claude-o-meter
 
 # Include raw CLI output in response
-./claude-o-meter --raw
+claude-o-meter --raw
 
 # Show help
-./claude-o-meter --help
+claude-o-meter --help
 ```
 
 ## Example Output
