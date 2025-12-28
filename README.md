@@ -1,6 +1,6 @@
 # claude-o-meter
 
-A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `claude /usage`.
+A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `claude /usage`. Use it to display your Claude plan usage in status bars like [HyprPanel](https://hyprpanel.com/). Currently ships with NixOS installation instructions—PRs for other Linux distros are welcome!
 
 ## Why?
 
