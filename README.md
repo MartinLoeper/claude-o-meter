@@ -133,7 +133,7 @@ In HyprPanel mode, auth errors display "!" with a descriptive tooltip.
 
 Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
 
-![HyprPanel showing Claude usage metrics](assets/hyprpanel.png)
+![HyprPanel showing Claude usage metrics](assets/hyprpanel.png?)
 
 ### Step 1: Start the Daemon
 
