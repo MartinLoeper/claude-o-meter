@@ -45,8 +45,12 @@ in
         RestartSec = "10s";
 
         # Ensure the daemon has access to Claude CLI and required tools (script from util-linux)
+        # TERM is required for the PTY to work properly without a controlling terminal
+        # HOME is needed for claude CLI config access
         Environment = [
           "PATH=${config.home.profileDirectory}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
+          "TERM=xterm-256color"
+          "HOME=${config.home.homeDirectory}"
         ];
       };
 
