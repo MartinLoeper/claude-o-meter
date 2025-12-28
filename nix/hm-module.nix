@@ -44,9 +44,9 @@ in
         Restart = "always";
         RestartSec = "10s";
 
-        # Ensure the daemon has access to Claude CLI
+        # Ensure the daemon has access to Claude CLI and required tools (script from util-linux)
         Environment = [
-          "PATH=${config.home.profileDirectory}/bin:/usr/bin:/bin"
+          "PATH=${config.home.profileDirectory}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
         ];
       };
 
