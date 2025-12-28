@@ -52,13 +52,14 @@ in
 
         # Ensure the daemon has access to Claude CLI and required tools
         # - coreutils for mktemp, chmod, dirname, yes (needed by claude wrapper and prompts)
+        # - procps for ps (needed by claude internally)
         # - bash for command piping
         # - unbuffer (from expect) for PTY in headless environments
         # - script (from util-linux) as fallback
         # TERM is required for PTY to work properly
         # HOME is needed for claude CLI config access
         Environment = [
-          "PATH=${config.home.profileDirectory}/bin:${pkgs.coreutils}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
+          "PATH=${config.home.profileDirectory}/bin:${pkgs.coreutils}/bin:${pkgs.procps}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
           "TERM=xterm-256color"
           "HOME=${config.home.homeDirectory}"
         ];
