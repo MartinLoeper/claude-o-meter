@@ -477,41 +477,12 @@ func parseCostUsage(text string) *CostUsage {
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
-	// Use expect to handle interactive prompts properly
-	// Write script to temp file to avoid shell escaping issues
-	expectScript := `set timeout 30
-spawn claude /usage
-expect {
-    "Yes, continue" {
-        send "\r"
-        exp_continue
-    }
-    "% used" {
-        sleep 0.5
-    }
-    "% left" {
-        sleep 0.5
-    }
-    timeout {
-        exit 1
-    }
-    eof
-}
-`
-	// Write expect script to temp file
-	tmpFile, err := os.CreateTemp("", "claude-expect-*.exp")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
+	// Use unbuffer with stdin to handle permission prompt
+	// Send newlines to accept default "Yes, continue" option
+	cmd := exec.CommandContext(ctx, "unbuffer", "-p", "claude", "/usage")
 
-	if _, err := tmpFile.WriteString(expectScript); err != nil {
-		tmpFile.Close()
-		return "", fmt.Errorf("failed to write expect script: %w", err)
-	}
-	tmpFile.Close()
-
-	cmd := exec.CommandContext(ctx, "expect", tmpFile.Name())
+	// Provide stdin with newlines to accept prompts
+	cmd.Stdin = strings.NewReader("\n\n\n\n\n")
 
 	var stdout bytes.Buffer
 	if debug {
