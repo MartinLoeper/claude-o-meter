@@ -45,9 +45,10 @@ type Quota struct {
 
 // CostUsage represents extra usage costs (Pro accounts)
 type CostUsage struct {
-	Spent    float64 `json:"spent"`
-	Budget   float64 `json:"budget"`
-	ResetsAt *string `json:"resets_at,omitempty"`
+	Spent     float64 `json:"spent,omitempty"`
+	Budget    float64 `json:"budget,omitempty"`
+	Unlimited bool    `json:"unlimited,omitempty"`
+	ResetsAt  *string `json:"resets_at,omitempty"`
 }
 
 // UsageSnapshot represents the complete usage information
@@ -424,7 +425,7 @@ func parseCostUsage(text string) *CostUsage {
 		return nil
 	}
 
-	// Find the extra usage section and look for cost pattern
+	// Find the extra usage section and look for cost pattern or unlimited
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		if strings.Contains(strings.ToLower(line), "extra usage") {
@@ -435,6 +436,16 @@ func parseCostUsage(text string) *CostUsage {
 			}
 
 			for j := i; j < endIdx; j++ {
+				lineLower := strings.ToLower(lines[j])
+
+				// Check for unlimited
+				if strings.Contains(lineLower, "unlimited") {
+					return &CostUsage{
+						Unlimited: true,
+					}
+				}
+
+				// Check for spent/budget pattern
 				if matches := costPattern.FindStringSubmatch(lines[j]); len(matches) > 2 {
 					spent, _ := strconv.ParseFloat(strings.ReplaceAll(matches[1], ",", ""), 64)
 					budget, _ := strconv.ParseFloat(strings.ReplaceAll(matches[2], ",", ""), 64)
