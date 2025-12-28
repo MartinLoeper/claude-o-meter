@@ -29,6 +29,12 @@ in
       example = "/tmp/claude-usage.json";
       description = "Path where the JSON output will be written";
     };
+
+    debug = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Print claude CLI output in real-time to journalctl for debugging";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -40,7 +46,7 @@ in
 
       Service = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}";
+        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}";
         Restart = "always";
         RestartSec = "10s";
 
