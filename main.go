@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -67,6 +71,14 @@ type UsageSnapshot struct {
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Details string `json:"details,omitempty"`
+}
+
+// HyprPanelOutput represents the JSON format expected by HyprPanel custom modules
+type HyprPanelOutput struct {
+	Text    string `json:"text"`
+	Alt     string `json:"alt"`
+	Class   string `json:"class"`
+	Tooltip string `json:"tooltip"`
 }
 
 var (
@@ -537,6 +549,88 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 	}
 }
 
+// formatHyprPanelOutput converts a UsageSnapshot to HyprPanel JSON format
+func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
+	if snapshot == nil || len(snapshot.Quotas) == 0 {
+		return &HyprPanelOutput{
+			Text:    "--",
+			Alt:     "error",
+			Class:   "error",
+			Tooltip: "Error fetching usage",
+		}
+	}
+
+	// Calculate session usage percentage (used, not remaining)
+	sessionUsed := 100 - snapshot.Quotas[0].PercentRemaining
+	sessionTime := "unknown"
+	if snapshot.Quotas[0].TimeRemainingHuman != "" {
+		sessionTime = snapshot.Quotas[0].TimeRemainingHuman
+	}
+
+	// Calculate weekly usage if available
+	weeklyUsed := 0.0
+	weeklyTime := "unknown"
+	if len(snapshot.Quotas) > 1 {
+		weeklyUsed = 100 - snapshot.Quotas[1].PercentRemaining
+		if snapshot.Quotas[1].TimeRemainingHuman != "" {
+			weeklyTime = snapshot.Quotas[1].TimeRemainingHuman
+		}
+	}
+
+	// Determine level based on session usage
+	var level string
+	switch {
+	case sessionUsed > 80:
+		level = "high"
+	case sessionUsed > 50:
+		level = "medium"
+	default:
+		level = "low"
+	}
+
+	// Build tooltip
+	tooltipLines := []string{
+		fmt.Sprintf("Session: %.0f%% used (%s left)", sessionUsed, sessionTime),
+		fmt.Sprintf("Weekly: %.0f%% used (%s left)", weeklyUsed, weeklyTime),
+	}
+
+	// Add extra usage info if available
+	if snapshot.CostUsage != nil {
+		if snapshot.CostUsage.Unlimited {
+			tooltipLines = append(tooltipLines, "Extra: Unlimited")
+		} else if snapshot.CostUsage.Budget > 0 {
+			tooltipLines = append(tooltipLines, fmt.Sprintf("Extra: $%.2f / $%.0f", snapshot.CostUsage.Spent, snapshot.CostUsage.Budget))
+		}
+	}
+
+	return &HyprPanelOutput{
+		Text:    fmt.Sprintf("%.0f%%", sessionUsed),
+		Alt:     level,
+		Class:   level,
+		Tooltip: strings.Join(tooltipLines, "\\n"),
+	}
+}
+
+// formatHyprPanelError returns an error HyprPanelOutput
+func formatHyprPanelError(message string) *HyprPanelOutput {
+	return &HyprPanelOutput{
+		Text:    "--",
+		Alt:     "error",
+		Class:   "error",
+		Tooltip: message,
+	}
+}
+
+// formatHyprPanelLoading returns a loading HyprPanelOutput (for daemon startup)
+func formatHyprPanelLoading() *HyprPanelOutput {
+	return &HyprPanelOutput{
+		Text:    "...",
+		Alt:     "loading",
+		Class:   "loading",
+		Tooltip: "Waiting for daemon...",
+	}
+}
+
 func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 	cleanOutput := stripANSI(rawOutput)
 
@@ -556,41 +650,187 @@ func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 	return snapshot
 }
 
-func main() {
-	// Parse flags
-	includeRaw := false
-	timeout := 30 * time.Second
-
-	for _, arg := range os.Args[1:] {
-		switch arg {
-		case "-d", "--debug":
-			includeRaw = true
-		case "-r", "--raw":
-			includeRaw = true
-		case "-h", "--help":
-			fmt.Println(`claude-o-meter - Get Claude usage metrics as JSON
-
-Usage: claude-o-meter [options]
-
-Options:
-  -d, --debug    Enable debug mode (includes raw output)
-  -r, --raw      Include raw CLI output in JSON
-  -h, --help     Show this help message
-
-Requires the 'claude' CLI to be installed and authenticated.
-
-Output: JSON object with usage quotas, account info, and reset times.`)
-			os.Exit(0)
-		}
-	}
-
-	// Create context with timeout
+// runQuery executes a single query and returns the snapshot or error
+func runQuery(includeRaw bool, timeout time.Duration) (*UsageSnapshot, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Execute CLI
 	rawOutput, err := executeClaudeCLI(ctx, timeout)
 	if err != nil {
+		return nil, err
+	}
+
+	return parseClaudeOutput(rawOutput, includeRaw), nil
+}
+
+// writeSnapshotToFile atomically writes a snapshot to the given file path
+func writeSnapshotToFile(snapshot *UsageSnapshot, outputFile string) error {
+	jsonBytes, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode JSON: %w", err)
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(outputFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Write to temp file first
+	tmpFile := outputFile + ".tmp"
+	if err := os.WriteFile(tmpFile, jsonBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpFile, outputFile); err != nil {
+		os.Remove(tmpFile) // Clean up on failure
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
+}
+
+// runDaemon runs the query in a loop, writing results to the output file
+func runDaemon(interval time.Duration, outputFile string, timeout time.Duration) {
+	log.Printf("Starting daemon: interval=%s, output=%s", interval, outputFile)
+
+	// Handle signals for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Run immediately on start
+	doQuery := func() {
+		snapshot, err := runQuery(false, timeout)
+		if err != nil {
+			log.Printf("Query failed: %v", err)
+			// Write error response to file so consumers know there was an issue
+			errResp := &UsageSnapshot{
+				AccountType: AccountTypeUnknown,
+				CapturedAt:  time.Now().Format(time.RFC3339),
+			}
+			if writeErr := writeSnapshotToFile(errResp, outputFile); writeErr != nil {
+				log.Printf("Failed to write error state: %v", writeErr)
+			}
+			return
+		}
+
+		if err := writeSnapshotToFile(snapshot, outputFile); err != nil {
+			log.Printf("Failed to write snapshot: %v", err)
+			return
+		}
+
+		log.Printf("Query successful: %s quota at %.0f%%",
+			snapshot.AccountType,
+			100-snapshot.Quotas[0].PercentRemaining)
+	}
+
+	doQuery()
+
+	for {
+		select {
+		case <-ticker.C:
+			doQuery()
+		case sig := <-sigChan:
+			log.Printf("Received signal %v, shutting down...", sig)
+			return
+		}
+	}
+}
+
+func printUsage() {
+	fmt.Println(`claude-o-meter - Get Claude usage metrics as JSON
+
+Usage: claude-o-meter <command> [options]
+
+Commands:
+  query     Query usage once and output to stdout (default if no command given)
+  daemon    Run as a daemon, periodically querying and writing to file
+  hyprpanel Read from file and output HyprPanel-compatible JSON
+
+Query options:
+  -d, --debug           Enable debug mode (includes raw output)
+  -r, --raw             Include raw CLI output in JSON
+  --hyprpanel-json      Output in HyprPanel module format
+
+Daemon options:
+  -i, --interval   Query interval (default: 60s)
+  -f, --file       Output file path (required)
+
+HyprPanel options:
+  -f, --file       Input file path (required)
+
+Examples:
+  claude-o-meter                           # Query once, output to stdout
+  claude-o-meter query                     # Same as above
+  claude-o-meter query --raw               # Include raw CLI output
+  claude-o-meter query --hyprpanel-json    # Output for HyprPanel (one-shot)
+  claude-o-meter daemon -i 60s -f /tmp/claude.json
+  claude-o-meter hyprpanel -f /tmp/claude.json  # Read file, output HyprPanel JSON
+
+Requires the 'claude' CLI to be installed and authenticated.`)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		// Default to query command
+		runQueryCommand(os.Args[1:])
+		return
+	}
+
+	switch os.Args[1] {
+	case "query":
+		runQueryCommand(os.Args[2:])
+	case "daemon":
+		runDaemonCommand(os.Args[2:])
+	case "hyprpanel":
+		runHyprPanelCommand(os.Args[2:])
+	case "-h", "--help", "help":
+		printUsage()
+		os.Exit(0)
+	default:
+		// Check if it's a flag for query command
+		if strings.HasPrefix(os.Args[1], "-") {
+			runQueryCommand(os.Args[1:])
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
+			printUsage()
+			os.Exit(1)
+		}
+	}
+}
+
+func runQueryCommand(args []string) {
+	queryFlags := flag.NewFlagSet("query", flag.ExitOnError)
+	debug := queryFlags.Bool("d", false, "Enable debug mode")
+	debugLong := queryFlags.Bool("debug", false, "Enable debug mode")
+	raw := queryFlags.Bool("r", false, "Include raw output")
+	rawLong := queryFlags.Bool("raw", false, "Include raw output")
+	hyprpanelJSON := queryFlags.Bool("hyprpanel-json", false, "Output in HyprPanel format")
+	help := queryFlags.Bool("h", false, "Show help")
+	helpLong := queryFlags.Bool("help", false, "Show help")
+
+	queryFlags.Parse(args)
+
+	if *help || *helpLong {
+		printUsage()
+		os.Exit(0)
+	}
+
+	includeRaw := *debug || *debugLong || *raw || *rawLong
+	timeout := 30 * time.Second
+
+	snapshot, err := runQuery(includeRaw, timeout)
+	if err != nil {
+		if *hyprpanelJSON {
+			output := formatHyprPanelError(err.Error())
+			jsonBytes, _ := json.Marshal(output)
+			fmt.Println(string(jsonBytes))
+			os.Exit(0) // Don't exit with error for HyprPanel
+		}
 		errResp := ErrorResponse{
 			Error:   "Failed to get usage data",
 			Details: err.Error(),
@@ -600,10 +840,13 @@ Output: JSON object with usage quotas, account info, and reset times.`)
 		os.Exit(1)
 	}
 
-	// Parse output
-	snapshot := parseClaudeOutput(rawOutput, includeRaw)
+	if *hyprpanelJSON {
+		output := formatHyprPanelOutput(snapshot)
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
 
-	// Output JSON
 	jsonBytes, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		errResp := ErrorResponse{
@@ -615,5 +858,104 @@ Output: JSON object with usage quotas, account info, and reset times.`)
 		os.Exit(1)
 	}
 
+	fmt.Println(string(jsonBytes))
+}
+
+func runDaemonCommand(args []string) {
+	daemonFlags := flag.NewFlagSet("daemon", flag.ExitOnError)
+	interval := daemonFlags.Duration("i", 60*time.Second, "Query interval")
+	intervalLong := daemonFlags.Duration("interval", 60*time.Second, "Query interval")
+	outputFile := daemonFlags.String("f", "", "Output file path (required)")
+	outputFileLong := daemonFlags.String("file", "", "Output file path (required)")
+	help := daemonFlags.Bool("h", false, "Show help")
+	helpLong := daemonFlags.Bool("help", false, "Show help")
+
+	daemonFlags.Parse(args)
+
+	if *help || *helpLong {
+		printUsage()
+		os.Exit(0)
+	}
+
+	// Determine which flags were used
+	actualInterval := *interval
+	if *intervalLong != 60*time.Second {
+		actualInterval = *intervalLong
+	}
+
+	actualOutputFile := *outputFile
+	if *outputFileLong != "" {
+		actualOutputFile = *outputFileLong
+	}
+
+	if actualOutputFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for daemon mode")
+		os.Exit(1)
+	}
+
+	timeout := 30 * time.Second
+	runDaemon(actualInterval, actualOutputFile, timeout)
+}
+
+func runHyprPanelCommand(args []string) {
+	hyprFlags := flag.NewFlagSet("hyprpanel", flag.ExitOnError)
+	inputFile := hyprFlags.String("f", "", "Input file path (required)")
+	inputFileLong := hyprFlags.String("file", "", "Input file path (required)")
+	help := hyprFlags.Bool("h", false, "Show help")
+	helpLong := hyprFlags.Bool("help", false, "Show help")
+
+	hyprFlags.Parse(args)
+
+	if *help || *helpLong {
+		printUsage()
+		os.Exit(0)
+	}
+
+	actualInputFile := *inputFile
+	if *inputFileLong != "" {
+		actualInputFile = *inputFileLong
+	}
+
+	if actualInputFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for hyprpanel mode")
+		os.Exit(1)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(actualInputFile); os.IsNotExist(err) {
+		// File doesn't exist - daemon hasn't written yet
+		output := formatHyprPanelLoading()
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	// Read and parse the file
+	data, err := os.ReadFile(actualInputFile)
+	if err != nil {
+		output := formatHyprPanelError("Failed to read file: " + err.Error())
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	var snapshot UsageSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		output := formatHyprPanelError("Failed to parse JSON: " + err.Error())
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	// Check if the snapshot has valid data
+	if len(snapshot.Quotas) == 0 {
+		output := formatHyprPanelError("No quota data available")
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	output := formatHyprPanelOutput(&snapshot)
+	jsonBytes, _ := json.Marshal(output)
 	fmt.Println(string(jsonBytes))
 }

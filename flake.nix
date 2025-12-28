@@ -7,37 +7,47 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-      in
-      {
-        packages = {
-          default = pkgs.buildGoModule {
-            pname = "claude-o-meter";
-            version = "0.1.0";
+    let
+      # System-agnostic outputs
+      systemAgnostic = {
+        homeManagerModules.default = import ./nix/hm-module.nix;
+        homeManagerModules.claude-o-meter = import ./nix/hm-module.nix;
+      };
 
-            src = ./.;
+      # Per-system outputs
+      perSystem = flake-utils.lib.eachDefaultSystem (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          packages = {
+            default = pkgs.buildGoModule {
+              pname = "claude-o-meter";
+              version = "0.1.0";
 
-            vendorHash = null;
+              src = ./.;
 
-            meta = with pkgs.lib; {
-              description = "A CLI tool that extracts Claude usage metrics as JSON";
-              homepage = "https://github.com/MartinLoeper/claude-o-meter";
-              license = licenses.mit;
-              maintainers = [ ];
-              mainProgram = "claude-o-meter";
+              vendorHash = null;
+
+              meta = with pkgs.lib; {
+                description = "A CLI tool that extracts Claude usage metrics as JSON";
+                homepage = "https://github.com/MartinLoeper/claude-o-meter";
+                license = licenses.mit;
+                maintainers = [ ];
+                mainProgram = "claude-o-meter";
+              };
             };
           };
-        };
 
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            go
-            gopls
-            gotools
-          ];
-        };
-      }
-    );
+          devShells.default = pkgs.mkShell {
+            buildInputs = with pkgs; [
+              go
+              gopls
+              gotools
+            ];
+          };
+        }
+      );
+    in
+    systemAgnostic // perSystem;
 }

@@ -51,11 +51,20 @@ go build -o claude-o-meter .
 ## Usage
 
 ```bash
-# Get usage as JSON
+# Query once, output JSON to stdout
 claude-o-meter
+
+# Query once, output HyprPanel-compatible JSON
+claude-o-meter query --hyprpanel-json
 
 # Include raw CLI output in response
 claude-o-meter --raw
+
+# Run as daemon (writes to file periodically)
+claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
+
+# Read daemon output and format for HyprPanel
+claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json
 
 # Show help
 claude-o-meter --help
@@ -99,48 +108,51 @@ Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
 
 ![HyprPanel showing Claude usage metrics](assets/hyprpanel.png)
 
-### 1. Create a wrapper script
+### Option 1: Using Home Manager (Recommended)
+
+The flake provides a Home Manager module that runs claude-o-meter as a systemd user service. This is the recommended approach as it handles polling in the background, avoiding timeout issues.
+
+Add to your Home Manager configuration:
+
+```nix
+{
+  inputs.claude-o-meter.url = "github:MartinLoeper/claude-o-meter";
+
+  # In your home-manager config:
+  imports = [ inputs.claude-o-meter.homeManagerModules.default ];
+
+  services.claude-o-meter = {
+    enable = true;
+    package = inputs.claude-o-meter.packages.${system}.default;
+    interval = "60s";  # How often to query (default: 60s)
+    outputFile = "${config.xdg.cacheHome}/claude-o-meter.json";  # Default location
+  };
+}
+```
+
+### Option 2: Manual Setup
+
+#### 1. Start the daemon
+
+You can run the daemon manually or create your own systemd service:
+
+```bash
+claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
+```
+
+#### 2. Create a wrapper script
 
 Save this as `~/.local/bin/claude-o-meter-wrapper`:
 
 ```bash
 #!/usr/bin/env bash
-# Wrapper script for HyprPanel - with caching and error handling
-
-CACHE="/tmp/claude-o-meter-cache.json"
-
-# Try to fetch fresh data
-RESULT=$(claude-o-meter 2>&1)
-
-# Check if we got valid data or an error
-if echo "$RESULT" | grep -q '"quotas"'; then
-    # Success - update cache
-    echo "$RESULT" > "$CACHE"
-elif echo "$RESULT" | grep -q '"error"'; then
-    # Error occurred - log to journalctl and fall back to cache
-    logger -t claude-o-meter "Failed to fetch usage: $(echo "$RESULT" | jq -r '.details // .error')"
-fi
-
-# Output from cache or error
-if [[ -f "$CACHE" ]] && grep -q '"quotas"' "$CACHE"; then
-    jq -r 'if .quotas then
-        (100 - .quotas[0].percent_remaining) as $session_used |
-        (100 - .quotas[1].percent_remaining) as $weekly_used |
-        (.quotas[0].time_remaining_human // "unknown") as $session_time |
-        (.quotas[1].time_remaining_human // "unknown") as $weekly_time |
-        (if .cost_usage then (if .cost_usage.unlimited then "Extra: Unlimited" else "Extra: $\(.cost_usage.spent) / $\(.cost_usage.budget)" end) else null end) as $extra |
-        (if $session_used > 80 then "high" elif $session_used > 50 then "medium" else "low" end) as $level |
-        (["Session: \($session_used | floor)% used (\($session_time) left)", "Weekly: \($weekly_used | floor)% used (\($weekly_time) left)"] + (if $extra then [$extra] else [] end) | join("\\n")) as $tooltip |
-        "{ \"text\": \"\($session_used | floor)%\", \"alt\": \"\($level)\", \"class\": \"\($level)\", \"tooltip\": \"\($tooltip)\" }"
-    else "{ \"text\": \"--\", \"alt\": \"error\", \"class\": \"error\", \"tooltip\": \"Error fetching usage\" }" end' < "$CACHE"
-else
-    echo '{ "text": "--", "alt": "error", "tooltip": "Error fetching usage" }'
-fi
+# Wrapper script for HyprPanel - reads from daemon-written file
+exec claude-o-meter hyprpanel -f "${HOME}/.cache/claude-o-meter.json"
 ```
 
 Make it executable: `chmod +x ~/.local/bin/claude-o-meter-wrapper`
 
-### 2. Add HyprPanel module config
+### 3. Add HyprPanel module config
 
 Add to `~/.config/hyprpanel/modules.json`:
 
@@ -151,7 +163,8 @@ Add to `~/.config/hyprpanel/modules.json`:
           "low": "🟢",
           "medium": "🟡",
           "high": "🔴",
-          "error": "⚫"
+          "error": "⚫",
+          "loading": "⏳"
         },
         "truncationSize": 0,
         "label": "{text} Claude",
@@ -166,12 +179,17 @@ Add to `~/.config/hyprpanel/modules.json`:
 }
 ```
 
+### 4. Add the module to your bar
+
+After adding the module config, you need to explicitly add `custom/claude-usage` to your bar layout in HyprPanel settings. The module won't appear automatically just by adding the config.
+
 This displays:
 - Session usage percentage with color indicator (green/yellow/red)
+- Loading indicator (hourglass) when the daemon hasn't written data yet
 - Tooltip with session time remaining, weekly usage, and extra usage info
 - Click to open Claude usage settings
 
-Check for errors: `journalctl -t claude-o-meter`
+Check daemon logs: `journalctl --user -u claude-o-meter`
 
 ## How It Works
 
@@ -180,7 +198,20 @@ Check for errors: `journalctl -t claude-o-meter`
 3. Kills the process once data is captured
 4. Strips ANSI escape codes from the output
 5. Parses account type, quotas, reset times, and email
-6. Outputs clean JSON to stdout
+6. Outputs clean JSON to stdout (query mode) or file (daemon mode)
+
+## Daemon Mode
+
+The daemon mode is designed for integrations like status bars where calling the CLI on each poll would cause timeouts:
+
+```bash
+claude-o-meter daemon -i 60s -f /path/to/output.json
+```
+
+- Queries Claude usage at the specified interval
+- Writes JSON atomically to the output file (temp file + rename)
+- Logs to stderr (captured by journalctl when run as systemd service)
+- Handles SIGTERM/SIGINT for graceful shutdown
 
 ## Credits
 
