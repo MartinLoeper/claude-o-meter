@@ -224,7 +224,7 @@ Add to `~/.config/hyprpanel/modules.json`:
         "actions": {
             "onLeftClick": "xdg-open https://claude.ai/settings/usage"
         },
-        "interval": 60000,
+        "interval": 6000,
         "hideOnEmpty": false
     }
 }
