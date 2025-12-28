@@ -97,6 +97,8 @@ claude-o-meter --help
 
 Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
 
+![HyprPanel showing Claude usage metrics](assets/hyprpanel.png)
+
 ### 1. Create a wrapper script
 
 Save this as `~/.local/bin/claude-o-meter-wrapper`:
