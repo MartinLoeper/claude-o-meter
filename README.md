@@ -144,7 +144,7 @@ services.claude-o-meter = {
   enable = true;
   interval = "30s";
   outputFile = "/tmp/claude-usage.json";
-  debug = true;  # Enable to troubleshoot issues
+  # debug = true;  # Enable to troubleshoot issues
 };
 ```
 
