@@ -800,7 +800,7 @@ func formatHyprPanelAuthError(authErr *AuthError) *HyprPanelOutput {
 	}
 
 	return &HyprPanelOutput{
-		Text:    "!",
+		Text:    "Claude",
 		Alt:     alt,
 		Class:   "auth_error",
 		Tooltip: authErr.Message,
