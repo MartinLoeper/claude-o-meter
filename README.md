@@ -261,6 +261,12 @@ All error states show a tooltip with a detailed message explaining the issue.
 systemctl --user restart claude-o-meter
 ```
 
+Then wait a few seconds for the daemon to fetch new data, and restart HyprPanel to refresh the module:
+
+```bash
+systemctl --user restart hyprpanel.service
+```
+
 ## How It Works
 
 1. Runs `claude /usage` in a PTY environment via the `script` command
