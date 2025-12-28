@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -471,6 +472,13 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stdout // Capture stderr to ensure consistent PTY behavior
+
+	// Set environment to ensure PTY works without a controlling terminal
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+	// Create a new session to work without a controlling terminal (e.g., from cron, systemd)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdin = nil
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
