@@ -614,7 +614,7 @@ func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
 		Text:    fmt.Sprintf("%.0f%%", sessionUsed),
 		Alt:     level,
 		Class:   level,
-		Tooltip: strings.Join(tooltipLines, "\\n"),
+		Tooltip: strings.Join(tooltipLines, "\n"),
 	}
 }
 
