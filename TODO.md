@@ -40,3 +40,17 @@ dbus-send --session --dest=com.github.MartinLoeper.ClaudeOMeter \
 ### NixOS Configuration
 - Add D-Bus service file (`dbus.services` in Home Manager)
 - Ensure proper permissions for session bus access
+
+## Configurable Color Thresholds
+
+Currently the color thresholds for HyprPanel output are hardcoded:
+- 🟢 low: 0-50% used
+- 🟡 medium: 51-80% used
+- 🔴 high: >80% used
+
+### Proposed Changes
+1. Add CLI flags to `hyprpanel` subcommand:
+   - `--threshold-medium` (default: 50)
+   - `--threshold-high` (default: 80)
+2. Add corresponding options to Home Manager module
+3. Allow users to customize when they want to be warned about usage

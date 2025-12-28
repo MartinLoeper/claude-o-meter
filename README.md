@@ -194,7 +194,10 @@ Add `custom/claude-usage` to your bar layout in HyprPanel settings. The module w
 ### Result
 
 This displays:
-- Session usage percentage with color indicator (green/yellow/red)
+- Session usage percentage with color indicator based on usage:
+  - 🟢 **low** (green): 0-50% used
+  - 🟡 **medium** (yellow): 51-80% used
+  - 🔴 **high** (red): >80% used
 - Loading indicator (hourglass) when the daemon hasn't written data yet
 - Tooltip with session time remaining, weekly usage, and extra usage info
 - Click to open Claude usage settings
