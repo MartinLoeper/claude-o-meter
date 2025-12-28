@@ -459,6 +459,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stdout // Capture stderr to ensure consistent PTY behavior
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
