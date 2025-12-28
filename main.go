@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -475,7 +476,7 @@ func parseCostUsage(text string) *CostUsage {
 	return nil
 }
 
-func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error) {
+func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
 	// Try unbuffer first (from expect package), fall back to script
 	// unbuffer is more reliable in headless/systemd environments
 	var cmd *exec.Cmd
@@ -487,8 +488,14 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error
 	}
 
 	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stdout // Capture stderr to ensure consistent PTY behavior
+	if debug {
+		// In debug mode, tee output to stderr so we can see it in real-time
+		cmd.Stdout = io.MultiWriter(&stdout, os.Stderr)
+		cmd.Stderr = io.MultiWriter(&stdout, os.Stderr)
+	} else {
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stdout // Capture stderr to ensure consistent PTY behavior
+	}
 
 	// Set environment to ensure PTY works without a controlling terminal
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
@@ -656,11 +663,11 @@ func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 }
 
 // runQuery executes a single query and returns the snapshot or error
-func runQuery(includeRaw bool, timeout time.Duration) (*UsageSnapshot, error) {
+func runQuery(includeRaw bool, timeout time.Duration, debug bool) (*UsageSnapshot, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	rawOutput, err := executeClaudeCLI(ctx, timeout)
+	rawOutput, err := executeClaudeCLI(ctx, timeout, debug)
 	if err != nil {
 		return nil, err
 	}
@@ -697,8 +704,8 @@ func writeSnapshotToFile(snapshot *UsageSnapshot, outputFile string) error {
 }
 
 // runDaemon runs the query in a loop, writing results to the output file
-func runDaemon(interval time.Duration, outputFile string, timeout time.Duration) {
-	log.Printf("Starting daemon: interval=%s, output=%s", interval, outputFile)
+func runDaemon(interval time.Duration, outputFile string, timeout time.Duration, debug bool) {
+	log.Printf("Starting daemon: interval=%s, output=%s, debug=%v", interval, outputFile, debug)
 
 	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -709,7 +716,7 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration)
 
 	// Run immediately on start
 	doQuery := func() {
-		snapshot, err := runQuery(false, timeout)
+		snapshot, err := runQuery(false, timeout, debug)
 		if err != nil {
 			log.Printf("Query failed: %v", err)
 			// Write error response to file so consumers know there was an issue
@@ -764,6 +771,7 @@ Query options:
 Daemon options:
   -i, --interval   Query interval (default: 60s)
   -f, --file       Output file path (required)
+  --debug          Print claude CLI output in real-time
 
 HyprPanel options:
   -f, --file       Input file path (required)
@@ -828,7 +836,7 @@ func runQueryCommand(args []string) {
 	includeRaw := *debug || *debugLong || *raw || *rawLong
 	timeout := 30 * time.Second
 
-	snapshot, err := runQuery(includeRaw, timeout)
+	snapshot, err := runQuery(includeRaw, timeout, false)
 	if err != nil {
 		if *hyprpanelJSON {
 			output := formatHyprPanelError(err.Error())
@@ -872,6 +880,7 @@ func runDaemonCommand(args []string) {
 	intervalLong := daemonFlags.Duration("interval", 60*time.Second, "Query interval")
 	outputFile := daemonFlags.String("f", "", "Output file path (required)")
 	outputFileLong := daemonFlags.String("file", "", "Output file path (required)")
+	debug := daemonFlags.Bool("debug", false, "Print claude CLI output in real-time")
 	help := daemonFlags.Bool("h", false, "Show help")
 	helpLong := daemonFlags.Bool("help", false, "Show help")
 
@@ -899,7 +908,7 @@ func runDaemonCommand(args []string) {
 	}
 
 	timeout := 30 * time.Second
-	runDaemon(actualInterval, actualOutputFile, timeout)
+	runDaemon(actualInterval, actualOutputFile, timeout, *debug)
 }
 
 func runHyprPanelCommand(args []string) {
