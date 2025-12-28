@@ -85,11 +85,11 @@ var (
 	hoursPattern   = regexp.MustCompile(`(\d+)\s*h(?:ours?|r)?`)
 	minutesPattern = regexp.MustCompile(`(\d+)\s*m(?:in(?:utes?)?)?`)
 
-	// Absolute time patterns: "5:59am" or "12:59pm"
-	timeOnlyPattern = regexp.MustCompile(`\b(\d{1,2}):(\d{2})(am|pm)\b`)
+	// Absolute time patterns: "5:59am", "6am", "12:59pm", "6pm"
+	timeOnlyPattern = regexp.MustCompile(`\b(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
-	// Full date pattern: "Jan 4, 2026, 12:59am"
-	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})(am|pm)\b`)
+	// Full date pattern: "Jan 4, 2026, 12:59am" or "Jan 4, 2026, 1am"
+	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
 	// Timezone pattern to extract location
 	timezonePattern = regexp.MustCompile(`\(([^)]+)\)`)
@@ -170,13 +170,13 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 
 	now := time.Now().In(loc)
 
-	// Try full date pattern first: "Jan 4, 2026, 12:59am"
+	// Try full date pattern first: "Jan 4, 2026, 12:59am" or "Jan 4, 2026, 1am"
 	if matches := fullDatePattern.FindStringSubmatch(text); len(matches) > 6 {
 		month := monthMap[strings.ToLower(matches[1])]
 		day, _ := strconv.Atoi(matches[2])
 		year, _ := strconv.Atoi(matches[3])
 		hour, _ := strconv.Atoi(matches[4])
-		min, _ := strconv.Atoi(matches[5])
+		min, _ := strconv.Atoi(matches[5]) // Will be 0 if minutes not specified
 		ampm := strings.ToLower(matches[6])
 
 		// Convert to 24-hour format
@@ -194,10 +194,10 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 		return &resetTime, nil
 	}
 
-	// Try time-only pattern: "5:59am"
+	// Try time-only pattern: "5:59am" or "6am"
 	if matches := timeOnlyPattern.FindStringSubmatch(text); len(matches) > 3 {
 		hour, _ := strconv.Atoi(matches[1])
-		min, _ := strconv.Atoi(matches[2])
+		min, _ := strconv.Atoi(matches[2]) // Will be 0 if minutes not specified
 		ampm := strings.ToLower(matches[3])
 
 		// Convert to 24-hour format
