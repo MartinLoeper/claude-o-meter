@@ -56,6 +56,35 @@ flowchart TB
 6. **Client mode** reads cache file, transforms to `HyprPanelOutput` format
 7. **Status bar** displays the formatted metrics
 
+### HyprPanel Integration Sequence
+
+```mermaid
+sequenceDiagram
+    participant HP as HyprPanel
+    participant CM as claude-o-meter hyprpanel
+    participant CF as Cache File
+    participant D as Daemon
+    participant CLI as claude /usage
+
+    Note over D,CLI: Background (every 60s)
+    loop Daemon Poll Cycle
+        D->>CLI: Execute in PTY
+        CLI-->>D: ANSI output with usage data
+        D->>D: Parse & strip ANSI
+        D->>CF: Write UsageSnapshot JSON
+    end
+
+    Note over HP,CF: Foreground (every 6s)
+    loop HyprPanel Poll Cycle
+        HP->>CM: Invoke binary
+        CM->>CF: Read JSON
+        CF-->>CM: UsageSnapshot
+        CM->>CM: Transform to HyprPanelOutput
+        CM-->>HP: JSON {text, alt, class, tooltip}
+        HP->>HP: Update status bar widget
+    end
+```
+
 ### Why This Architecture?
 
 - **Efficiency**: The Claude CLI takes 2-3 seconds to return results. Running it on every status bar refresh would cause delays.
