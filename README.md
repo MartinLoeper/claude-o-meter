@@ -160,19 +160,7 @@ You can run the daemon manually or create your own systemd service:
 claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
 ```
 
-#### 2. Create a wrapper script
-
-Save this as `~/.local/bin/claude-o-meter-wrapper`:
-
-```bash
-#!/usr/bin/env bash
-# Wrapper script for HyprPanel - reads from daemon-written file
-exec claude-o-meter hyprpanel -f "${HOME}/.cache/claude-o-meter.json"
-```
-
-Make it executable: `chmod +x ~/.local/bin/claude-o-meter-wrapper`
-
-### 3. Add HyprPanel module config
+#### 2. Add HyprPanel module config
 
 Add to `~/.config/hyprpanel/modules.json`:
 
@@ -189,7 +177,7 @@ Add to `~/.config/hyprpanel/modules.json`:
         "truncationSize": 0,
         "label": "{text} Claude",
         "tooltip": "{tooltip}",
-        "execute": "~/.local/bin/claude-o-meter-wrapper",
+        "execute": "claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json",
         "actions": {
             "onLeftClick": "xdg-open https://claude.ai/settings/usage"
         },
@@ -199,7 +187,7 @@ Add to `~/.config/hyprpanel/modules.json`:
 }
 ```
 
-### 4. Add the module to your bar
+### 3. Add the module to your bar
 
 After adding the module config, you need to explicitly add `custom/claude-usage` to your bar layout in HyprPanel settings. The module won't appear automatically just by adding the config.
 
