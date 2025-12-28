@@ -123,12 +123,32 @@ Add to your Home Manager configuration:
 
   services.claude-o-meter = {
     enable = true;
-    # package = inputs.claude-o-meter.packages.${system}.default;  # Optional, uses flake default
-    # interval = "60s";  # Optional, default: 60s
-    # outputFile = "${config.xdg.cacheHome}/claude-o-meter.json";  # Optional, default location
   };
 }
 ```
+
+#### Home Manager Module Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enable` | bool | `false` | Enable the claude-o-meter daemon service |
+| `package` | package | flake default | The claude-o-meter package to use |
+| `interval` | string | `"60s"` | How often to query Claude usage metrics |
+| `outputFile` | string | `~/.cache/claude-o-meter.json` | Path where the JSON output will be written |
+| `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
+
+Example with all options:
+
+```nix
+services.claude-o-meter = {
+  enable = true;
+  interval = "30s";
+  outputFile = "/tmp/claude-usage.json";
+  debug = true;  # Enable to troubleshoot issues
+};
+```
+
+The systemd service automatically includes all required dependencies in PATH (coreutils, procps, expect, util-linux, bash).
 
 ### Option 2: Manual Setup
 
