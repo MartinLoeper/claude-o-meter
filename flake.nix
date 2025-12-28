@@ -12,14 +12,22 @@
 
   outputs = { self, nixpkgs, flake-utils, claude-code }:
     let
+      # Version follows claude-code versioning
+      version = "2.0.76";
+
       # Build package for a given system
       mkPackage = pkgs: pkgs.buildGoModule {
         pname = "claude-o-meter";
-        version = "2.0.76";  # Follows claude-code versioning
+        inherit version;
 
         src = ./.;
 
         vendorHash = null;
+
+        ldflags = [
+          "-s" "-w"
+          "-X main.Version=${version}"
+        ];
 
         meta = with pkgs.lib; {
           description = "A CLI tool that extracts Claude usage metrics as JSON";

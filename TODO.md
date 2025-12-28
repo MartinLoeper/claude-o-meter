@@ -44,6 +44,25 @@ Currently the color thresholds for HyprPanel output are hardcoded:
 2. Add corresponding options to Home Manager module
 3. Allow users to customize when they want to be warned about usage
 
+## HyprPanel Menu Integration
+
+Add instructions for setting up a HyprPanel menu for more sophisticated interactions:
+
+### Use Cases
+- Bind a keyboard shortcut to display time remaining until quota reset
+- Show detailed quota breakdown in a popup menu
+- Quick actions like opening Claude usage settings or refreshing data
+
+### Documentation to Add
+1. Example menu configuration for HyprPanel
+2. Keyboard shortcut bindings (e.g., Super+C to show Claude usage popup)
+3. Integration with notification systems for quota warnings
+
+### Potential Features
+- `claude-o-meter notify` subcommand for desktop notifications
+- Machine-readable output format for scripting menu entries
+- Support for different notification backends (dunst, mako, etc.)
+
 ## Claude Code Version Pinning
 
 Once [upstream support](https://github.com/sadjow/claude-code-nix/issues/144) is available:

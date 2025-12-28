@@ -19,6 +19,9 @@ import (
 	"time"
 )
 
+// Version is set at build time via ldflags
+var Version = "dev"
+
 // AccountType represents the Claude account tier
 type AccountType string
 
@@ -936,7 +939,7 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 }
 
 func printUsage() {
-	fmt.Println(`claude-o-meter - Get Claude usage metrics as JSON
+	fmt.Printf(`claude-o-meter %s - Get Claude usage metrics as JSON
 
 Usage: claude-o-meter <command> [options]
 
@@ -944,6 +947,10 @@ Commands:
   query     Query usage once and output to stdout (default if no command given)
   daemon    Run as a daemon, periodically querying and writing to file
   hyprpanel Read from file and output HyprPanel-compatible JSON
+
+Global options:
+  -v, --version         Show version
+  -h, --help            Show help
 
 Query options:
   -d, --debug           Enable debug mode (includes raw output)
@@ -966,7 +973,8 @@ Examples:
   claude-o-meter daemon -i 60s -f /tmp/claude.json
   claude-o-meter hyprpanel -f /tmp/claude.json  # Read file, output HyprPanel JSON
 
-Requires the 'claude' CLI to be installed and authenticated.`)
+Requires the 'claude' CLI to be installed and authenticated.
+`, Version)
 }
 
 func main() {
@@ -985,6 +993,9 @@ func main() {
 		runHyprPanelCommand(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
+		os.Exit(0)
+	case "-v", "--version", "version":
+		fmt.Printf("claude-o-meter %s\n", Version)
 		os.Exit(0)
 	default:
 		// Check if it's a flag for query command
