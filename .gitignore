@@ -10,3 +10,5 @@ claude-o-meter
 # OS
 .DS_Store
 Thumbs.db
+
+result/

@@ -34,11 +34,13 @@ const (
 
 // Quota represents a usage quota
 type Quota struct {
-	Type             QuotaType `json:"type"`
-	Model            string    `json:"model,omitempty"`
-	PercentRemaining float64   `json:"percent_remaining"`
-	ResetsAt         *string   `json:"resets_at,omitempty"`
-	ResetText        string    `json:"reset_text,omitempty"`
+	Type                 QuotaType `json:"type"`
+	Model                string    `json:"model,omitempty"`
+	PercentRemaining     float64   `json:"percent_remaining"`
+	ResetsAt             *string   `json:"resets_at,omitempty"`
+	ResetText            string    `json:"reset_text,omitempty"`
+	TimeRemainingSeconds *int64    `json:"time_remaining_seconds,omitempty"`
+	TimeRemainingHuman   string    `json:"time_remaining_human,omitempty"`
 }
 
 // CostUsage represents extra usage costs (Pro accounts)
@@ -77,10 +79,19 @@ var (
 	// Percentage pattern: "X% used" or "X% left"
 	percentPattern = regexp.MustCompile(`(\d{1,3})\s*%\s*(used|left)`)
 
-	// Time patterns for reset parsing
+	// Time patterns for reset parsing (relative durations)
 	daysPattern    = regexp.MustCompile(`(\d+)\s*d(?:ays?)?`)
 	hoursPattern   = regexp.MustCompile(`(\d+)\s*h(?:ours?|r)?`)
 	minutesPattern = regexp.MustCompile(`(\d+)\s*m(?:in(?:utes?)?)?`)
+
+	// Absolute time patterns: "5:59am" or "12:59pm"
+	timeOnlyPattern = regexp.MustCompile(`\b(\d{1,2}):(\d{2})(am|pm)\b`)
+
+	// Full date pattern: "Jan 4, 2026, 12:59am"
+	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})(am|pm)\b`)
+
+	// Timezone pattern to extract location
+	timezonePattern = regexp.MustCompile(`\(([^)]+)\)`)
 
 	// Email patterns
 	emailHeaderPattern = regexp.MustCompile(`(?i)·\s*Claude\s+(?:Max|Pro)\s*·\s*([^\s@]+@[^\s@']+)`)
@@ -134,7 +145,86 @@ func parsePercentage(text string) (float64, bool) {
 	return value, true
 }
 
-func parseResetTime(lines []string, startIdx int) (string, *time.Time) {
+// monthMap for parsing month names
+var monthMap = map[string]time.Month{
+	"jan": time.January, "feb": time.February, "mar": time.March,
+	"apr": time.April, "may": time.May, "jun": time.June,
+	"jul": time.July, "aug": time.August, "sep": time.September,
+	"oct": time.October, "nov": time.November, "dec": time.December,
+}
+
+// parseAbsoluteTime attempts to parse absolute time from text and returns reset time and duration
+func parseAbsoluteTime(text string) (*time.Time, *int64) {
+	// Try to extract timezone location
+	var loc *time.Location
+	if tzMatches := timezonePattern.FindStringSubmatch(text); len(tzMatches) > 1 {
+		tzName := tzMatches[1]
+		if l, err := time.LoadLocation(tzName); err == nil {
+			loc = l
+		}
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+
+	now := time.Now().In(loc)
+
+	// Try full date pattern first: "Jan 4, 2026, 12:59am"
+	if matches := fullDatePattern.FindStringSubmatch(text); len(matches) > 6 {
+		month := monthMap[strings.ToLower(matches[1])]
+		day, _ := strconv.Atoi(matches[2])
+		year, _ := strconv.Atoi(matches[3])
+		hour, _ := strconv.Atoi(matches[4])
+		min, _ := strconv.Atoi(matches[5])
+		ampm := strings.ToLower(matches[6])
+
+		// Convert to 24-hour format
+		if ampm == "pm" && hour != 12 {
+			hour += 12
+		} else if ampm == "am" && hour == 12 {
+			hour = 0
+		}
+
+		resetTime := time.Date(year, month, day, hour, min, 0, 0, loc)
+		duration := int64(resetTime.Sub(now).Seconds())
+		if duration > 0 {
+			return &resetTime, &duration
+		}
+		return &resetTime, nil
+	}
+
+	// Try time-only pattern: "5:59am"
+	if matches := timeOnlyPattern.FindStringSubmatch(text); len(matches) > 3 {
+		hour, _ := strconv.Atoi(matches[1])
+		min, _ := strconv.Atoi(matches[2])
+		ampm := strings.ToLower(matches[3])
+
+		// Convert to 24-hour format
+		if ampm == "pm" && hour != 12 {
+			hour += 12
+		} else if ampm == "am" && hour == 12 {
+			hour = 0
+		}
+
+		// Create reset time for today
+		resetTime := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, loc)
+
+		// If the time has already passed today, it means tomorrow
+		if resetTime.Before(now) {
+			resetTime = resetTime.Add(24 * time.Hour)
+		}
+
+		duration := int64(resetTime.Sub(now).Seconds())
+		if duration > 0 {
+			return &resetTime, &duration
+		}
+		return &resetTime, nil
+	}
+
+	return nil, nil
+}
+
+func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
 	// Look within next 14 lines for reset information
 	endIdx := startIdx + 14
 	if endIdx > len(lines) {
@@ -144,7 +234,7 @@ func parseResetTime(lines []string, startIdx int) (string, *time.Time) {
 	for i := startIdx; i < endIdx; i++ {
 		line := strings.ToLower(lines[i])
 		if strings.Contains(line, "reset") || strings.Contains(line, "renew") {
-			// Parse duration components
+			// First try parsing relative duration components
 			var totalSeconds int64
 
 			if matches := daysPattern.FindStringSubmatch(lines[i]); len(matches) > 1 {
@@ -162,12 +252,45 @@ func parseResetTime(lines []string, startIdx int) (string, *time.Time) {
 
 			if totalSeconds > 0 {
 				resetTime := time.Now().Add(time.Duration(totalSeconds) * time.Second)
-				return lines[i], &resetTime
+				return lines[i], &resetTime, &totalSeconds
 			}
-			return lines[i], nil
+
+			// Fallback: try absolute time parsing
+			resetTime, duration := parseAbsoluteTime(lines[i])
+			if resetTime != nil {
+				return lines[i], resetTime, duration
+			}
+
+			return lines[i], nil, nil
 		}
 	}
-	return "", nil
+	return "", nil, nil
+}
+
+// formatDuration converts seconds to a human-readable duration string
+func formatDuration(seconds int64) string {
+	if seconds <= 0 {
+		return "0m"
+	}
+
+	days := seconds / (24 * 60 * 60)
+	seconds %= 24 * 60 * 60
+	hours := seconds / (60 * 60)
+	seconds %= 60 * 60
+	minutes := seconds / 60
+
+	var parts []string
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if minutes > 0 || len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+
+	return strings.Join(parts, " ")
 }
 
 func parseQuotas(text string) []Quota {
@@ -199,7 +322,7 @@ func parseQuotas(text string) []Quota {
 
 				for j := i; j < searchEnd; j++ {
 					if percent, ok := parsePercentage(lines[j]); ok {
-						resetText, resetTime := parseResetTime(lines, j)
+						resetText, resetTime, durationSeconds := parseResetTime(lines, j)
 
 						quota := Quota{
 							Type:             info.qType,
@@ -211,6 +334,11 @@ func parseQuotas(text string) []Quota {
 						if resetTime != nil {
 							ts := resetTime.Format(time.RFC3339)
 							quota.ResetsAt = &ts
+						}
+
+						if durationSeconds != nil {
+							quota.TimeRemainingSeconds = durationSeconds
+							quota.TimeRemainingHuman = formatDuration(*durationSeconds)
 						}
 
 						quotas = append(quotas, quota)
