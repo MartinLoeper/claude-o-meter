@@ -29,6 +29,23 @@ const (
 	AccountTypeUnknown AccountType = "unknown"
 )
 
+// AuthErrorCode represents specific authentication error types
+type AuthErrorCode string
+
+const (
+	AuthErrorNone           AuthErrorCode = ""
+	AuthErrorNotLoggedIn    AuthErrorCode = "not_logged_in"
+	AuthErrorTokenExpired   AuthErrorCode = "token_expired"
+	AuthErrorNoSubscription AuthErrorCode = "no_subscription"
+	AuthErrorSetupRequired  AuthErrorCode = "setup_required"
+)
+
+// AuthError represents an authentication-related error
+type AuthError struct {
+	Code    AuthErrorCode
+	Message string
+}
+
 // QuotaType represents the type of quota
 type QuotaType string
 
@@ -59,13 +76,14 @@ type CostUsage struct {
 
 // UsageSnapshot represents the complete usage information
 type UsageSnapshot struct {
-	AccountType  AccountType `json:"account_type"`
-	Email        string      `json:"email,omitempty"`
-	Organization string      `json:"organization,omitempty"`
-	Quotas       []Quota     `json:"quotas"`
-	CostUsage    *CostUsage  `json:"cost_usage,omitempty"`
-	CapturedAt   string      `json:"captured_at"`
-	RawOutput    string      `json:"raw_output,omitempty"`
+	AccountType  AccountType    `json:"account_type"`
+	Email        string         `json:"email,omitempty"`
+	Organization string         `json:"organization,omitempty"`
+	Quotas       []Quota        `json:"quotas"`
+	CostUsage    *CostUsage     `json:"cost_usage,omitempty"`
+	AuthError    *AuthError     `json:"auth_error,omitempty"`
+	CapturedAt   string         `json:"captured_at"`
+	RawOutput    string         `json:"raw_output,omitempty"`
 }
 
 // ErrorResponse for JSON error output
@@ -118,10 +136,100 @@ var (
 
 	// Cost pattern for extra usage
 	costPattern = regexp.MustCompile(`\$?([\d,]+\.?\d*)\s*/\s*\$?([\d,]+\.?\d*)\s*spent`)
+
+	// Authentication error patterns
+	// Login prompt patterns - these indicate the user needs to authenticate
+	loginPromptPattern = regexp.MustCompile(`(?i)(sign\s*in|log\s*in|authenticate)\s*(to\s+continue|required|to\s+use)`)
+	loginURLPattern    = regexp.MustCompile(`(?i)https?://[^\s]*(?:login|auth|signin)[^\s]*`)
+
+	// Token/session expiration patterns
+	tokenExpiredPattern = regexp.MustCompile(`(?i)(token|session)\s*(has\s+)?expired`)
+	authErrorPattern    = regexp.MustCompile(`(?i)authentication[_\s]*(error|failed|required)`)
+
+	// No subscription patterns - user is logged in but doesn't have Pro/Max
+	noSubscriptionPattern = regexp.MustCompile(`(?i)(free\s+tier|no\s+(active\s+)?subscription|upgrade\s+to\s+(pro|max)|subscribe\s+to)`)
+
+	// Generic not logged in indicators
+	notLoggedInPattern = regexp.MustCompile(`(?i)(not\s+logged\s+in|please\s+(log|sign)\s*in|login\s+required)`)
+
+	// First-run setup screen pattern - "Let's get started" with theme selection
+	// Note: Handle various apostrophe types and be lenient with whitespace
+	setupRequiredPattern  = regexp.MustCompile(`(?i)let.?s\s+get\s+started`)
+	themeSelectionPattern = regexp.MustCompile(`(?i)(choose\s+(the\s+)?text\s+style|run\s+/theme|dark\s+mode|light\s+mode)`)
 )
 
 func stripANSI(text string) string {
 	return ansiPattern.ReplaceAllString(text, "")
+}
+
+// detectAuthError checks the CLI output for authentication-related errors
+// Returns nil if no auth error is detected
+func detectAuthError(text string) *AuthError {
+	textLower := strings.ToLower(text)
+
+	// Check for first-run setup screen (Let's get started / theme selection)
+	if setupRequiredPattern.MatchString(text) || themeSelectionPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorSetupRequired,
+			Message: "Claude CLI setup required. Please run 'claude' to complete initial setup.",
+		}
+	}
+
+	// Check for token expiration first (most specific)
+	if tokenExpiredPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorTokenExpired,
+			Message: "Claude CLI session has expired. Please run 'claude' to re-authenticate.",
+		}
+	}
+
+	// Check for authentication errors
+	if authErrorPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorNotLoggedIn,
+			Message: "Authentication error. Please run 'claude' to log in.",
+		}
+	}
+
+	// Check for explicit not logged in messages
+	if notLoggedInPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorNotLoggedIn,
+			Message: "Not logged in to Claude CLI. Please run 'claude' to authenticate.",
+		}
+	}
+
+	// Check for login prompts (sign in, log in, etc.)
+	if loginPromptPattern.MatchString(text) || loginURLPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorNotLoggedIn,
+			Message: "Login required. Please run 'claude' to authenticate.",
+		}
+	}
+
+	// Check for no subscription (user is logged in but doesn't have Pro/Max)
+	if noSubscriptionPattern.MatchString(text) {
+		return &AuthError{
+			Code:    AuthErrorNoSubscription,
+			Message: "No active Claude Pro or Max subscription. Usage metrics require a paid plan.",
+		}
+	}
+
+	// Additional heuristic: if we see "claude" mentioned but no percentage data,
+	// and there's mention of "account" or "subscription", it might be a subscription issue
+	if strings.Contains(textLower, "account") || strings.Contains(textLower, "subscription") {
+		if !strings.Contains(text, "% used") && !strings.Contains(text, "% left") {
+			// Only flag this if we have some indication it's about authentication
+			if strings.Contains(textLower, "verify") || strings.Contains(textLower, "confirm") {
+				return &AuthError{
+					Code:    AuthErrorNotLoggedIn,
+					Message: "Authentication verification required. Please run 'claude' to verify your account.",
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func detectAccountType(text string) AccountType {
@@ -516,6 +624,17 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
+	// Helper to check if output contains usage data
+	hasUsageData := func(output string) bool {
+		return strings.Contains(output, "% used") || strings.Contains(output, "% left")
+	}
+
+	// Helper to check if output indicates an auth error (so we can stop waiting)
+	hasAuthError := func(output string) bool {
+		cleanOutput := stripANSI(output)
+		return detectAuthError(cleanOutput) != nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -525,7 +644,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			}
 			// Check if we got data before timing out
 			output := stdout.String()
-			if strings.Contains(output, "% used") || strings.Contains(output, "% left") {
+			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
 			}
 			return "", fmt.Errorf("command timed out after %v", timeout)
@@ -533,7 +652,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 		case err := <-done:
 			// Command finished on its own
 			output := stdout.String()
-			if strings.Contains(output, "% used") || strings.Contains(output, "% left") {
+			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
 			}
 			if err != nil {
@@ -542,10 +661,19 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			return output, nil
 
 		case <-ticker.C:
-			// Check if we have usage data yet
+			// Check if we have usage data or auth error yet
 			output := stdout.String()
-			if strings.Contains(output, "% used") || strings.Contains(output, "% left") {
+			if hasUsageData(output) {
 				// Give it a moment to finish rendering, then kill the process group
+				time.Sleep(300 * time.Millisecond)
+				if cmd.Process != nil {
+					syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				}
+				return stdout.String(), nil
+			}
+			// Also check for auth errors - no point waiting for usage data if not logged in
+			if hasAuthError(output) {
+				// Give it a moment to capture the full error message
 				time.Sleep(300 * time.Millisecond)
 				if cmd.Process != nil {
 					syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -558,6 +686,11 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 
 // formatHyprPanelOutput converts a UsageSnapshot to HyprPanel JSON format
 func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
+	// Check for auth errors first
+	if snapshot != nil && snapshot.AuthError != nil {
+		return formatHyprPanelAuthError(snapshot.AuthError)
+	}
+
 	if snapshot == nil || len(snapshot.Quotas) == 0 {
 		return &HyprPanelOutput{
 			Text:    "--",
@@ -610,8 +743,17 @@ func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
 		}
 	}
 
+	// Determine account label for display
+	accountLabel := "Claude"
+	switch snapshot.AccountType {
+	case AccountTypeMax:
+		accountLabel = "Max"
+	case AccountTypePro:
+		accountLabel = "Pro"
+	}
+
 	return &HyprPanelOutput{
-		Text:    fmt.Sprintf("%.0f%%", sessionUsed),
+		Text:    fmt.Sprintf("%.0f%% %s", sessionUsed, accountLabel),
 		Alt:     level,
 		Class:   level,
 		Tooltip: strings.Join(tooltipLines, "\n"),
@@ -638,6 +780,33 @@ func formatHyprPanelLoading() *HyprPanelOutput {
 	}
 }
 
+// formatHyprPanelAuthError returns an auth error HyprPanelOutput with appropriate styling
+func formatHyprPanelAuthError(authErr *AuthError) *HyprPanelOutput {
+	if authErr == nil {
+		return formatHyprPanelError("Unknown error")
+	}
+
+	// Use different alt/class based on error type for potential icon customization
+	alt := "auth_error"
+	switch authErr.Code {
+	case AuthErrorNotLoggedIn:
+		alt = "not_logged_in"
+	case AuthErrorTokenExpired:
+		alt = "token_expired"
+	case AuthErrorNoSubscription:
+		alt = "no_subscription"
+	case AuthErrorSetupRequired:
+		alt = "setup_required"
+	}
+
+	return &HyprPanelOutput{
+		Text:    "!",
+		Alt:     alt,
+		Class:   "auth_error",
+		Tooltip: authErr.Message,
+	}
+}
+
 func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 	cleanOutput := stripANSI(rawOutput)
 
@@ -647,11 +816,17 @@ func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 		Organization: parseOrganization(cleanOutput),
 		Quotas:       parseQuotas(cleanOutput),
 		CostUsage:    parseCostUsage(cleanOutput),
+		AuthError:    detectAuthError(cleanOutput),
 		CapturedAt:   time.Now().Format(time.RFC3339),
 	}
 
 	if includeRaw {
 		snapshot.RawOutput = cleanOutput
+	}
+
+	// If we have an auth error and no quotas, ensure account type reflects the issue
+	if snapshot.AuthError != nil && len(snapshot.Quotas) == 0 {
+		snapshot.AccountType = AccountTypeUnknown
 	}
 
 	return snapshot
@@ -725,12 +900,20 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			return
 		}
 
+		// Check for authentication errors
+		if snapshot.AuthError != nil {
+			log.Printf("Authentication error: %s - %s", snapshot.AuthError.Code, snapshot.AuthError.Message)
+		}
+
 		if err := writeSnapshotToFile(snapshot, outputFile); err != nil {
 			log.Printf("Failed to write snapshot: %v", err)
 			return
 		}
 
-		if len(snapshot.Quotas) > 0 {
+		if snapshot.AuthError != nil {
+			// Already logged above, just note the write succeeded
+			log.Printf("Auth error state written to file")
+		} else if len(snapshot.Quotas) > 0 {
 			log.Printf("Query successful: %s quota at %.0f%%",
 				snapshot.AccountType,
 				100-snapshot.Quotas[0].PercentRemaining)
@@ -833,9 +1016,10 @@ func runQueryCommand(args []string) {
 	}
 
 	includeRaw := *debug || *debugLong || *raw || *rawLong
+	debugMode := *debug || *debugLong
 	timeout := 30 * time.Second
 
-	snapshot, err := runQuery(includeRaw, timeout, false)
+	snapshot, err := runQuery(includeRaw, timeout, debugMode)
 	if err != nil {
 		if *hyprpanelJSON {
 			output := formatHyprPanelError(err.Error())
@@ -955,6 +1139,14 @@ func runHyprPanelCommand(args []string) {
 	var snapshot UsageSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		output := formatHyprPanelError("Failed to parse JSON: " + err.Error())
+		jsonBytes, _ := json.Marshal(output)
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	// Check for auth errors first
+	if snapshot.AuthError != nil {
+		output := formatHyprPanelAuthError(snapshot.AuthError)
 		jsonBytes, _ := json.Marshal(output)
 		fmt.Println(string(jsonBytes))
 		return

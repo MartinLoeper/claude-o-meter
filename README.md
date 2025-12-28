@@ -70,6 +70,33 @@ claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json
 claude-o-meter --help
 ```
 
+## Authentication States
+
+claude-o-meter detects when the Claude CLI is not ready to provide usage data and returns structured error information:
+
+| State | Error Code | Description |
+|-------|------------|-------------|
+| Setup required | `setup_required` | First-run setup screen (theme selection) |
+| Not logged in | `not_logged_in` | User needs to authenticate |
+| Token expired | `token_expired` | Session has expired, re-authentication needed |
+| No subscription | `no_subscription` | User is on free tier without Pro/Max |
+
+When an auth error is detected, the JSON output includes an `auth_error` field:
+
+```json
+{
+  "account_type": "unknown",
+  "quotas": null,
+  "auth_error": {
+    "Code": "setup_required",
+    "Message": "Claude CLI setup required. Please run 'claude' to complete initial setup."
+  },
+  "captured_at": "2025-12-28T15:16:30+01:00"
+}
+```
+
+In HyprPanel mode, auth errors display "!" with a descriptive tooltip.
+
 ## Example Output
 
 ```json
@@ -172,10 +199,14 @@ Add to `~/.config/hyprpanel/modules.json`:
           "medium": "🟡",
           "high": "🔴",
           "error": "⚫",
-          "loading": "⏳"
+          "loading": "⏳",
+          "setup_required": "🔧",
+          "not_logged_in": "🔑",
+          "token_expired": "⏰",
+          "no_subscription": "💳"
         },
         "truncationSize": 0,
-        "label": "{text} Claude",
+        "label": "{text}",
         "tooltip": "{tooltip}",
         "execute": "claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json",
         "actions": {
@@ -199,6 +230,11 @@ This displays:
   - 🟡 **medium** (yellow): 51-80% used
   - 🔴 **high** (red): >80% used
 - Loading indicator (hourglass) when the daemon hasn't written data yet
+- Authentication state indicators:
+  - 🔧 **setup_required**: Claude CLI needs initial setup
+  - 🔑 **not_logged_in**: User needs to log in
+  - ⏰ **token_expired**: Session expired, re-login needed
+  - 💳 **no_subscription**: No Pro/Max subscription
 - Tooltip with session time remaining, weekly usage, and extra usage info
 - Click to open Claude usage settings
 
