@@ -240,6 +240,21 @@ This displays:
 
 Check daemon logs: `journalctl --user -u claude-o-meter`
 
+### Troubleshooting
+
+When claude-o-meter encounters issues, HyprPanel displays the following states:
+
+| Icon | Text | State | Cause | Solution |
+|------|------|-------|-------|----------|
+| 🔧 | Claude | `setup_required` | Claude CLI shows first-run setup screen | Run `claude` and complete the theme selection |
+| 🔑 | Claude | `not_logged_in` | User is not authenticated | Run `claude` and sign in |
+| ⏰ | Claude | `token_expired` | Session has expired | Run `claude` to re-authenticate |
+| 💳 | Claude | `no_subscription` | No Pro/Max subscription | Upgrade to Claude Pro or Max |
+| ⚫ | -- | `error` | Failed to fetch or parse usage data | Check daemon logs for details |
+| ⏳ | ... | `loading` | Daemon hasn't written data yet | Wait for first poll or check if daemon is running |
+
+All error states show a tooltip with a detailed message explaining the issue.
+
 ## How It Works
 
 1. Runs `claude /usage` in a PTY environment via the `script` command
