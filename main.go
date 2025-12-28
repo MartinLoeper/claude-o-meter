@@ -481,22 +481,18 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 	// It waits for the prompt before sending input
 	expectScript := `
 set timeout 30
-spawn claude --dangerously-skip-permissions /usage
+spawn claude /usage
 expect {
-    "Yes, I accept" {
-        send "2\r"
-        exp_continue
-    }
     "Yes, continue" {
-        send "1\r"
+        send "\r"
         exp_continue
     }
     "% used" {
         # Got usage data, wait a bit for full output
-        sleep 0.3
+        sleep 0.5
     }
     "% left" {
-        sleep 0.3
+        sleep 0.5
     }
     timeout {
         exit 1
