@@ -16,6 +16,8 @@ claude-o-meter scrapes output from the Claude CLI, so it depends on specific Cla
 
 When using the Home Manager module, the correct Claude Code version is automatically included as a dependency via [claude-code-nix](https://github.com/sadjow/claude-code-nix).
 
+**Note:** We are awaiting [upstream support for version pinning](https://github.com/sadjow/claude-code-nix/issues/144) to provide a Nix option for pinning specific Claude Code versions. Once available, we can always ship working defaults.
+
 ## Installation
 
 ### Nix (recommended for NixOS users)
