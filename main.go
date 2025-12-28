@@ -479,12 +479,13 @@ func parseCostUsage(text string) *CostUsage {
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
 	// Try unbuffer first (from expect package), fall back to script
 	// unbuffer is more reliable in headless/systemd environments
+	// Use --dangerously-skip-permissions to avoid interactive permission prompt
 	var cmd *exec.Cmd
 	if _, err := exec.LookPath("unbuffer"); err == nil {
-		cmd = exec.CommandContext(ctx, "unbuffer", "claude", "/usage")
+		cmd = exec.CommandContext(ctx, "unbuffer", "claude", "--dangerously-skip-permissions", "/usage")
 	} else {
 		// Fallback to script command
-		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "claude /usage", "/dev/null")
+		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "claude --dangerously-skip-permissions /usage", "/dev/null")
 	}
 
 	var stdout bytes.Buffer
