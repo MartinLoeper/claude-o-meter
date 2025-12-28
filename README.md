@@ -255,6 +255,12 @@ When claude-o-meter encounters issues, HyprPanel displays the following states:
 
 All error states show a tooltip with a detailed message explaining the issue.
 
+**Note:** After fixing an authentication issue (logging in, completing setup, etc.), restart the daemon to immediately fetch updated usage data:
+
+```bash
+systemctl --user restart claude-o-meter
+```
+
 ## How It Works
 
 1. Runs `claude /usage` in a PTY environment via the `script` command
