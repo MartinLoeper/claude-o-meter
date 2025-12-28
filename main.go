@@ -477,18 +477,34 @@ func parseCostUsage(text string) *CostUsage {
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
-	// Try unbuffer first (from expect package), fall back to script
-	// unbuffer is more reliable in headless/systemd environments
-	// Use --dangerously-skip-permissions to avoid interactive permission prompt
-	// Use 'yes 2' to repeatedly send "2" to accept bypass mode confirmation
-	var cmd *exec.Cmd
-	if _, err := exec.LookPath("unbuffer"); err == nil {
-		// Use bash with yes to auto-accept prompts (option 2 = "Yes, I accept")
-		cmd = exec.CommandContext(ctx, "bash", "-c", "yes 2 | unbuffer -p claude --dangerously-skip-permissions /usage")
-	} else {
-		// Fallback to script command
-		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "yes 2 | claude --dangerously-skip-permissions /usage", "/dev/null")
-	}
+	// Use expect to handle interactive prompts properly
+	// It waits for the prompt before sending input
+	expectScript := `
+set timeout 30
+spawn claude --dangerously-skip-permissions /usage
+expect {
+    "Yes, I accept" {
+        send "2\r"
+        exp_continue
+    }
+    "Yes, continue" {
+        send "1\r"
+        exp_continue
+    }
+    "% used" {
+        # Got usage data, wait a bit for full output
+        sleep 0.3
+    }
+    "% left" {
+        sleep 0.3
+    }
+    timeout {
+        exit 1
+    }
+    eof
+}
+`
+	cmd := exec.CommandContext(ctx, "expect", "-c", expectScript)
 
 	var stdout bytes.Buffer
 	if debug {
