@@ -480,12 +480,14 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 	// Try unbuffer first (from expect package), fall back to script
 	// unbuffer is more reliable in headless/systemd environments
 	// Use --dangerously-skip-permissions to avoid interactive permission prompt
+	// Use 'yes 2' to repeatedly send "2" to accept bypass mode confirmation
 	var cmd *exec.Cmd
 	if _, err := exec.LookPath("unbuffer"); err == nil {
-		cmd = exec.CommandContext(ctx, "unbuffer", "claude", "--dangerously-skip-permissions", "/usage")
+		// Use bash with yes to auto-accept prompts (option 2 = "Yes, I accept")
+		cmd = exec.CommandContext(ctx, "bash", "-c", "yes 2 | unbuffer -p claude --dangerously-skip-permissions /usage")
 	} else {
 		// Fallback to script command
-		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "claude --dangerously-skip-permissions /usage", "/dev/null")
+		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "yes 2 | claude --dangerously-skip-permissions /usage", "/dev/null")
 	}
 
 	var stdout bytes.Buffer
