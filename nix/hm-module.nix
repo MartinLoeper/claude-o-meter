@@ -44,11 +44,13 @@ in
         Restart = "always";
         RestartSec = "10s";
 
-        # Ensure the daemon has access to Claude CLI and required tools (script from util-linux)
-        # TERM is required for the PTY to work properly without a controlling terminal
+        # Ensure the daemon has access to Claude CLI and required tools
+        # - unbuffer (from expect) for PTY in headless environments
+        # - script (from util-linux) as fallback
+        # TERM is required for PTY to work properly
         # HOME is needed for claude CLI config access
         Environment = [
-          "PATH=${config.home.profileDirectory}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
+          "PATH=${config.home.profileDirectory}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
           "TERM=xterm-256color"
           "HOME=${config.home.homeDirectory}"
         ];

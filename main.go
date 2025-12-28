@@ -476,10 +476,15 @@ func parseCostUsage(text string) *CostUsage {
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration) (string, error) {
-	// Create command using script to provide a PTY environment
-	// The -q flag suppresses the "Script started" message
-	// We use /dev/null as the typescript file since we capture stdout directly
-	cmd := exec.CommandContext(ctx, "script", "-q", "-c", "claude /usage", "/dev/null")
+	// Try unbuffer first (from expect package), fall back to script
+	// unbuffer is more reliable in headless/systemd environments
+	var cmd *exec.Cmd
+	if _, err := exec.LookPath("unbuffer"); err == nil {
+		cmd = exec.CommandContext(ctx, "unbuffer", "claude", "/usage")
+	} else {
+		// Fallback to script command
+		cmd = exec.CommandContext(ctx, "script", "-q", "-c", "claude /usage", "/dev/null")
+	}
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
