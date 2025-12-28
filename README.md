@@ -108,11 +108,13 @@ Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
 
 ![HyprPanel showing Claude usage metrics](assets/hyprpanel.png)
 
-### Option 1: Using Home Manager (Recommended)
+### Step 1: Start the Daemon
 
-The flake provides a Home Manager module that runs claude-o-meter as a systemd user service. This is the recommended approach as it handles polling in the background, avoiding timeout issues.
+The daemon polls Claude usage periodically and writes to a JSON file. Choose one of these options:
 
-Add to your Home Manager configuration:
+#### Option A: Home Manager (Recommended)
+
+The flake provides a Home Manager module that runs claude-o-meter as a systemd user service.
 
 ```nix
 {
@@ -127,7 +129,7 @@ Add to your Home Manager configuration:
 }
 ```
 
-#### Home Manager Module Options
+##### Home Manager Module Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -150,17 +152,15 @@ services.claude-o-meter = {
 
 The systemd service automatically includes all required dependencies in PATH (coreutils, procps, expect, util-linux, bash).
 
-### Option 2: Manual Setup
+#### Option B: Manual
 
-#### 1. Start the daemon
-
-You can run the daemon manually or create your own systemd service:
+Run the daemon manually or create your own systemd service:
 
 ```bash
 claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
 ```
 
-#### 2. Add HyprPanel module config
+### Step 2: Add HyprPanel Module Config
 
 Add to `~/.config/hyprpanel/modules.json`:
 
@@ -187,9 +187,11 @@ Add to `~/.config/hyprpanel/modules.json`:
 }
 ```
 
-### 3. Add the module to your bar
+### Step 3: Add the Module to Your Bar
 
-After adding the module config, you need to explicitly add `custom/claude-usage` to your bar layout in HyprPanel settings. The module won't appear automatically just by adding the config.
+Add `custom/claude-usage` to your bar layout in HyprPanel settings. The module won't appear automatically just by adding the config.
+
+### Result
 
 This displays:
 - Session usage percentage with color indicator (green/yellow/red)
