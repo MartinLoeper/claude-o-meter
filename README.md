@@ -70,18 +70,106 @@ claude-o-meter --help
   "quotas": [
     {
       "type": "session",
-      "percent_remaining": 34,
-      "reset_text": "Resets 4am (Europe/Berlin)"
+      "percent_remaining": 80,
+      "resets_at": "2025-12-28T06:00:00+01:00",
+      "reset_text": "Resets 6am (Europe/Berlin)",
+      "time_remaining_seconds": 12600,
+      "time_remaining_human": "3h 30m"
     },
     {
       "type": "weekly",
-      "percent_remaining": 85,
-      "reset_text": "Resets Jan 1, 2026, 10pm (Europe/Berlin)"
+      "percent_remaining": 98,
+      "resets_at": "2026-01-04T01:00:00+01:00",
+      "reset_text": "Resets Jan 4, 2026, 1am (Europe/Berlin)",
+      "time_remaining_seconds": 597600,
+      "time_remaining_human": "6d 22h"
     }
   ],
-  "captured_at": "2025-12-28T00:53:16+01:00"
+  "cost_usage": {
+    "spent": 49.49,
+    "budget": 100
+  },
+  "captured_at": "2025-12-28T02:30:00+01:00"
 }
 ```
+
+## HyprPanel Integration
+
+Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
+
+### 1. Create a wrapper script
+
+Save this as `~/.local/bin/claude-o-meter-wrapper`:
+
+```bash
+#!/usr/bin/env bash
+# Wrapper script for HyprPanel - with caching and error handling
+
+CACHE="/tmp/claude-o-meter-cache.json"
+
+# Try to fetch fresh data
+RESULT=$(claude-o-meter 2>&1)
+
+# Check if we got valid data or an error
+if echo "$RESULT" | grep -q '"quotas"'; then
+    # Success - update cache
+    echo "$RESULT" > "$CACHE"
+elif echo "$RESULT" | grep -q '"error"'; then
+    # Error occurred - log to journalctl and fall back to cache
+    logger -t claude-o-meter "Failed to fetch usage: $(echo "$RESULT" | jq -r '.details // .error')"
+fi
+
+# Output from cache or error
+if [[ -f "$CACHE" ]] && grep -q '"quotas"' "$CACHE"; then
+    jq -r 'if .quotas then
+        (100 - .quotas[0].percent_remaining) as $session_used |
+        (100 - .quotas[1].percent_remaining) as $weekly_used |
+        (.quotas[0].time_remaining_human // "unknown") as $session_time |
+        (.quotas[1].time_remaining_human // "unknown") as $weekly_time |
+        (if .cost_usage then (if .cost_usage.unlimited then "Extra: Unlimited" else "Extra: $\(.cost_usage.spent) / $\(.cost_usage.budget)" end) else null end) as $extra |
+        (if $session_used > 80 then "high" elif $session_used > 50 then "medium" else "low" end) as $level |
+        (["Session: \($session_used | floor)% used (\($session_time) left)", "Weekly: \($weekly_used | floor)% used (\($weekly_time) left)"] + (if $extra then [$extra] else [] end) | join("\\n")) as $tooltip |
+        "{ \"text\": \"\($session_used | floor)%\", \"alt\": \"\($level)\", \"class\": \"\($level)\", \"tooltip\": \"\($tooltip)\" }"
+    else "{ \"text\": \"--\", \"alt\": \"error\", \"class\": \"error\", \"tooltip\": \"Error fetching usage\" }" end' < "$CACHE"
+else
+    echo '{ "text": "--", "alt": "error", "tooltip": "Error fetching usage" }'
+fi
+```
+
+Make it executable: `chmod +x ~/.local/bin/claude-o-meter-wrapper`
+
+### 2. Add HyprPanel module config
+
+Add to `~/.config/hyprpanel/modules.json`:
+
+```json
+{
+    "custom/claude-usage": {
+        "icon": {
+          "low": "🟢",
+          "medium": "🟡",
+          "high": "🔴",
+          "error": "⚫"
+        },
+        "truncationSize": 0,
+        "label": "{text} Claude",
+        "tooltip": "{tooltip}",
+        "execute": "~/.local/bin/claude-o-meter-wrapper",
+        "actions": {
+            "onLeftClick": "xdg-open https://claude.ai/settings/usage"
+        },
+        "interval": 60000,
+        "hideOnEmpty": false
+    }
+}
+```
+
+This displays:
+- Session usage percentage with color indicator (green/yellow/red)
+- Tooltip with session time remaining, weekly usage, and extra usage info
+- Click to open Claude usage settings
+
+Check for errors: `journalctl -t claude-o-meter`
 
 ## How It Works
 
