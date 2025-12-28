@@ -477,10 +477,10 @@ func parseCostUsage(text string) *CostUsage {
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
-	// Use bash to send delayed input to claude
-	// Sleep briefly to let claude initialize, then send Enter to accept prompt
-	shellCmd := `(sleep 1; echo; sleep 1; echo) | unbuffer -p claude /usage`
-	cmd := exec.CommandContext(ctx, "bash", "-c", shellCmd)
+	// Run claude from /tmp to avoid permission prompts for home directory
+	// Use script command for PTY
+	cmd := exec.CommandContext(ctx, "script", "-q", "-c", "claude /usage", "/dev/null")
+	cmd.Dir = "/tmp"
 
 	var stdout bytes.Buffer
 	if debug {
