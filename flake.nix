@@ -12,8 +12,8 @@
 
   outputs = { self, nixpkgs, flake-utils, claude-code }:
     let
-      # Version follows claude-code versioning
-      version = "2.0.76";
+      # Read version from VERSION file (single source of truth)
+      version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
 
       # Build package for a given system
       mkPackage = pkgs: pkgs.buildGoModule {

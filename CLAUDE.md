@@ -9,18 +9,28 @@ claude-o-meter is a Go CLI tool that extracts Claude usage metrics by parsing th
 ## Build Commands
 
 ```bash
-# Build
-go build -o claude-o-meter .
+# Build with version from VERSION file
+go build -ldflags "-X main.Version=$(cat VERSION)" -o claude-o-meter .
 
-# Run directly
+# Run directly (dev version)
 go run .
 
-# Build with Nix
+# Build with Nix (reads VERSION automatically)
 nix build
 
 # Enter dev shell (provides go, gopls, gotools)
 nix develop
 ```
+
+## Versioning
+
+Version is stored in the `VERSION` file. See `VERSIONING.md` for the full scheme.
+
+**When to update VERSION:**
+
+- Parser changes for new Claude Code version → `<new-claude-version>-1`
+- Bug fixes or new features → increment revision (`X.Y.Z-1` → `X.Y.Z-2`)
+- Documentation only → no change needed
 
 ## Testing
 
