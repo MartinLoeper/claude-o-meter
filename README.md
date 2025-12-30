@@ -12,11 +12,11 @@ This project is fully developed using [Claude Code](https://claude.ai/code) with
 
 ## Compatibility
 
-claude-o-meter scrapes output from the Claude CLI, so it depends on specific Claude Code versions. Our versioning follows Claude Code 1:1.
+claude-o-meter scrapes output from the Claude CLI, so it depends on specific Claude Code versions. Our versioning scheme is `<claude-code-version>-<revision>` (see [VERSIONING.md](VERSIONING.md)).
 
 | claude-o-meter | Claude Code | Status    |
 |----------------|-------------|-----------|
-| 2.0.76         | 2.0.76      | Tested :white_check_mark: |
+| 2.0.76-X       | 2.0.76      | Tested :white_check_mark: |
 
 When using the Home Manager module, the correct Claude Code version is automatically included as a dependency via [claude-code-nix](https://github.com/sadjow/claude-code-nix).
 
