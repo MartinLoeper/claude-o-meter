@@ -32,6 +32,17 @@ Version is stored in the `VERSION` file. See `VERSIONING.md` for the full scheme
 - Bug fixes or new features → increment revision (`X.Y.Z-1` → `X.Y.Z-2`)
 - Documentation only → no change needed
 
+**Release process:**
+
+1. Update `VERSION` file with new version
+2. Commit the change
+3. Create and push a git tag: `git tag v$(cat VERSION) && git push --tags`
+
+**IMPORTANT:**
+
+- Always update the `VERSION` file BEFORE creating a git tag. The tag must match the VERSION file contents.
+- Only bump the version after meaningful changes to Nix sources (`flake.nix`, `nix/`) or Go sources (`*.go`). Documentation-only changes do not require a version bump.
+
 ## Testing
 
 This project currently has no tests. The codebase is a single `main.go` file.
