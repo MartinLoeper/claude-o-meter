@@ -773,16 +773,6 @@ func formatHyprPanelError(message string) *HyprPanelOutput {
 	}
 }
 
-// formatHyprPanelLoading returns a loading HyprPanelOutput (for daemon startup)
-func formatHyprPanelLoading() *HyprPanelOutput {
-	return &HyprPanelOutput{
-		Text:    "...",
-		Alt:     "loading",
-		Class:   "loading",
-		Tooltip: "Waiting for daemon...",
-	}
-}
-
 // formatHyprPanelAuthError returns an auth error HyprPanelOutput with appropriate styling
 func formatHyprPanelAuthError(authErr *AuthError) *HyprPanelOutput {
 	if authErr == nil {
@@ -1129,13 +1119,12 @@ func runHyprPanelCommand(args []string) {
 		os.Exit(1)
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(actualInputFile); os.IsNotExist(err) {
-		// File doesn't exist - daemon hasn't written yet
-		output := formatHyprPanelLoading()
-		jsonBytes, _ := json.Marshal(output)
-		fmt.Println(string(jsonBytes))
-		return
+	// Wait for file to exist (blocks until daemon has written)
+	for {
+		if _, err := os.Stat(actualInputFile); err == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Read and parse the file

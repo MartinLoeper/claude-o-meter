@@ -93,6 +93,49 @@ sequenceDiagram
 
 ---
 
+## Edge Cases
+
+### Cache File Missing (First Startup)
+
+When `claude-o-meter hyprpanel` is invoked before the daemon has written its first cache file, the client **blocks** until the file exists. This ensures the status bar receives valid data rather than a transient "loading" state.
+
+```mermaid
+sequenceDiagram
+    participant HP as HyprPanel
+    participant CM as claude-o-meter hyprpanel
+    participant FS as Filesystem
+    participant D as Daemon
+
+    HP->>CM: Invoke binary
+    CM->>FS: Check file exists?
+    FS-->>CM: No
+
+    loop Poll every 500ms
+        CM->>FS: Check file exists?
+        FS-->>CM: No
+    end
+
+    Note over D: Daemon completes first query
+    D->>FS: Write cache file
+
+    CM->>FS: Check file exists?
+    FS-->>CM: Yes
+    CM->>FS: Read JSON
+    FS-->>CM: UsageSnapshot
+    CM-->>HP: JSON {text, alt, class, tooltip}
+```
+
+**Behavior Summary:**
+
+| Scenario | Client Behavior |
+|----------|-----------------|
+| Cache file exists | Read immediately, return formatted output |
+| Cache file missing | Block, poll every 500ms until file appears |
+
+**Rationale:** Blocking prevents the status bar from displaying a flickering "loading" indicator on every poll cycle during startup. The daemon typically writes its first result within 2-3 seconds, so the delay is minimal.
+
+---
+
 ## Account Type Detection
 
 The tool detects the Claude account type by parsing the header line from `claude /usage` output.
@@ -100,7 +143,8 @@ The tool detects the Claude account type by parsing the header line from `claude
 ### Patterns
 
 The CLI outputs a header line in the format:
-```
+
+```text
 · claude <type> · user@email.com
 ```
 
