@@ -10,7 +10,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, claude-code }:
+  outputs = { self, nixpkgs, flake-utils, claude-code ? null }:
     let
       # Read version from VERSION file (single source of truth)
       version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
@@ -44,9 +44,13 @@
           let
             system = pkgs.stdenv.hostPlatform.system;
             # Import the actual module and pass the default package and claude-code
+            # claude-code input is optional - pass null if not provided
             module = import ./nix/hm-module.nix {
               defaultPackage = mkPackage pkgs;
-              claudeCodePackage = claude-code.packages.${system}.default;
+              claudeCodePackage =
+                if claude-code != null
+                then claude-code.packages.${system}.default
+                else null;
             };
           in
           module { inherit config lib pkgs; };
