@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 claude-o-meter is a Go CLI tool that extracts Claude usage metrics by parsing the output of `claude /usage`. It outputs JSON for integration with status bars like HyprPanel.
 
+## Git Worktrees
+
+This repository uses git worktrees. The main worktree lives in `claude-o-meter-worktrees/claude-o-meter/`.
+
+**Creating new worktrees:** Always create worktrees in the parent directory (`claude-o-meter-worktrees/`) so Claude Code can navigate between them:
+
+```bash
+# From the main worktree, create a new worktree in the parent directory
+git worktree add ../feature-branch-name feature-branch-name
+
+# List all worktrees
+git worktree list
+
+# Remove a worktree
+git worktree remove ../feature-branch-name
+```
+
 ## Build Commands
 
 ```bash

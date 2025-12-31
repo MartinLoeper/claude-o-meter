@@ -13,7 +13,28 @@ in
       type = lib.types.package;
       default = defaultPackage;
       defaultText = lib.literalExpression "pkgs.claude-o-meter";
-      description = "The claude-o-meter package to use";
+      description = "The claude-o-meter package to use.";
+    };
+
+    claudeCodePackage = lib.mkOption {
+      type = lib.types.package;
+      default =
+        if claudeCodePackage != null
+        then claudeCodePackage
+        else throw ''
+          services.claude-o-meter.claudeCodePackage must be set.
+
+          The claude-code flake input was not provided. You need to either:
+          1. Add the claude-code input to your flake and pass it to claude-o-meter
+          2. Set services.claude-o-meter.claudeCodePackage to your own Claude Code package
+        '';
+      defaultText = lib.literalExpression "claude-code-nix";
+      description = ''
+        The Claude Code CLI package to use. Override this to use a different
+        version or your own build of Claude Code.
+
+        If the claude-code flake input is not provided, this option must be set explicitly.
+      '';
     };
 
     interval = lib.mkOption {
@@ -45,7 +66,7 @@ in
         # Restart service when packages change
         X-Restart-Triggers = [
           cfg.package
-          claudeCodePackage
+          cfg.claudeCodePackage
         ];
       };
 
@@ -57,7 +78,7 @@ in
         RestartSec = "10s";
 
         # Ensure the daemon has access to Claude CLI and required tools
-        # - claude-code: the Claude CLI we depend on (pinned version)
+        # - claude-code: the Claude CLI we depend on (configurable via claudeCodePackage option)
         # - coreutils for mktemp, chmod, dirname, yes (needed by claude wrapper and prompts)
         # - procps for ps (needed by claude internally)
         # - bash for command piping
@@ -66,7 +87,7 @@ in
         # TERM is required for PTY to work properly
         # HOME is needed for claude CLI config access
         Environment = [
-          "PATH=${claudeCodePackage}/bin:${pkgs.coreutils}/bin:${pkgs.procps}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
+          "PATH=${cfg.claudeCodePackage}/bin:${pkgs.coreutils}/bin:${pkgs.procps}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
           "TERM=xterm-256color"
           "HOME=${config.home.homeDirectory}"
         ];
