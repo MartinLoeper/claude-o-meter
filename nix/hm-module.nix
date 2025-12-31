@@ -51,6 +51,7 @@ in
 
       Service = {
         Type = "simple";
+        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.outputFile}";
         ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}";
         Restart = "always";
         RestartSec = "10s";
