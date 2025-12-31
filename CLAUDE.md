@@ -25,18 +25,18 @@ git worktree remove ../feature-branch-name
 
 ## Build Commands
 
+**IMPORTANT:** Do not run `go build`, `go run`, or other dev tools directly - required dependencies (gcc, pkg-config, etc.) are only available inside the Nix environment.
+
 ```bash
-# Build with version from VERSION file
-go build -ldflags "-X main.Version=$(cat VERSION)" -o claude-o-meter .
-
-# Run directly (dev version)
-go run .
-
-# Build with Nix (reads VERSION automatically)
+# Quick build check (verifies code compiles)
 nix build
 
-# Enter dev shell (provides go, gopls, gotools)
+# Enter dev shell for interactive development
 nix develop
+
+# Inside nix develop shell:
+go build -ldflags "-X main.Version=$(cat VERSION)" -o claude-o-meter .
+go run .
 ```
 
 ## Versioning
