@@ -41,9 +41,9 @@ type DBusService struct {
 func (s *DBusService) RefreshNow() *dbus.Error {
 	select {
 	case s.refreshChan <- struct{}{}:
-		// Signal sent successfully
+		log.Printf("D-Bus: RefreshNow called, triggering immediate refresh")
 	default:
-		// Channel full, refresh already pending
+		log.Printf("D-Bus: RefreshNow called, refresh already pending")
 	}
 	return nil
 }
