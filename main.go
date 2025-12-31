@@ -17,10 +17,36 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/godbus/dbus/v5"
+	"github.com/godbus/dbus/v5/introspect"
 )
 
 // Version is set at build time via ldflags
 var Version = "dev"
+
+// D-Bus service constants
+const (
+	dbusServiceName = "com.github.MartinLoeper.ClaudeOMeter"
+	dbusObjectPath  = "/com/github/MartinLoeper/ClaudeOMeter"
+	dbusInterface   = "com.github.MartinLoeper.ClaudeOMeter"
+)
+
+// DBusService exposes methods over D-Bus for external control
+type DBusService struct {
+	refreshChan chan struct{}
+}
+
+// RefreshNow triggers an immediate usage query
+func (s *DBusService) RefreshNow() *dbus.Error {
+	select {
+	case s.refreshChan <- struct{}{}:
+		// Signal sent successfully
+	default:
+		// Channel full, refresh already pending
+	}
+	return nil
+}
 
 // AccountType represents the Claude account tier
 type AccountType string
@@ -866,9 +892,71 @@ func writeSnapshotToFile(snapshot *UsageSnapshot, outputFile string) error {
 	return nil
 }
 
+// startDBusService registers the D-Bus service and blocks forever
+func startDBusService(refreshChan chan struct{}) {
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		log.Printf("Failed to connect to session bus: %v", err)
+		return
+	}
+
+	service := &DBusService{refreshChan: refreshChan}
+
+	// Export the service methods
+	err = conn.Export(service, dbus.ObjectPath(dbusObjectPath), dbusInterface)
+	if err != nil {
+		log.Printf("Failed to export D-Bus service: %v", err)
+		return
+	}
+
+	// Export introspection data for dbus-send compatibility
+	introNode := &introspect.Node{
+		Name: dbusObjectPath,
+		Interfaces: []introspect.Interface{
+			introspect.IntrospectData,
+			{
+				Name: dbusInterface,
+				Methods: []introspect.Method{
+					{
+						Name: "RefreshNow",
+					},
+				},
+			},
+		},
+	}
+	err = conn.Export(introspect.NewIntrospectable(introNode), dbus.ObjectPath(dbusObjectPath),
+		"org.freedesktop.DBus.Introspectable")
+	if err != nil {
+		log.Printf("Failed to export introspection: %v", err)
+		return
+	}
+
+	// Request the service name
+	reply, err := conn.RequestName(dbusServiceName, dbus.NameFlagDoNotQueue)
+	if err != nil {
+		log.Printf("Failed to request D-Bus name: %v", err)
+		return
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		log.Printf("D-Bus name %s already taken", dbusServiceName)
+		return
+	}
+
+	log.Printf("D-Bus service registered: %s", dbusServiceName)
+	select {} // Block forever, methods are called in separate goroutines
+}
+
 // runDaemon runs the query in a loop, writing results to the output file
-func runDaemon(interval time.Duration, outputFile string, timeout time.Duration, debug bool) {
-	log.Printf("Starting daemon: interval=%s, output=%s, debug=%v", interval, outputFile, debug)
+func runDaemon(interval time.Duration, outputFile string, timeout time.Duration, debug bool, enableDbus bool) {
+	log.Printf("Starting daemon: interval=%s, output=%s, debug=%v, dbus=%v", interval, outputFile, debug, enableDbus)
+
+	// Create refresh channel for D-Bus triggers
+	refreshChan := make(chan struct{}, 1)
+
+	// Start D-Bus service if enabled
+	if enableDbus {
+		go startDBusService(refreshChan)
+	}
 
 	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -921,6 +1009,10 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 		select {
 		case <-ticker.C:
 			doQuery()
+		case <-refreshChan:
+			log.Printf("D-Bus refresh requested")
+			doQuery()
+			ticker.Reset(interval) // Reset timer after manual refresh
 		case sig := <-sigChan:
 			log.Printf("Received signal %v, shutting down...", sig)
 			return
@@ -950,6 +1042,7 @@ Query options:
 Daemon options:
   -i, --interval   Query interval (default: 60s)
   -f, --file       Output file path (required)
+  -b, --dbus       Enable D-Bus service for external refresh triggers
   --debug          Print claude CLI output in real-time
 
 HyprPanel options:
@@ -1064,6 +1157,8 @@ func runDaemonCommand(args []string) {
 	intervalLong := daemonFlags.Duration("interval", 60*time.Second, "Query interval")
 	outputFile := daemonFlags.String("f", "", "Output file path (required)")
 	outputFileLong := daemonFlags.String("file", "", "Output file path (required)")
+	enableDbus := daemonFlags.Bool("b", false, "Enable D-Bus service for external refresh triggers")
+	enableDbusLong := daemonFlags.Bool("dbus", false, "Enable D-Bus service for external refresh triggers")
 	debug := daemonFlags.Bool("debug", false, "Print claude CLI output in real-time")
 	help := daemonFlags.Bool("h", false, "Show help")
 	helpLong := daemonFlags.Bool("help", false, "Show help")
@@ -1086,13 +1181,15 @@ func runDaemonCommand(args []string) {
 		actualOutputFile = *outputFileLong
 	}
 
+	actualEnableDbus := *enableDbus || *enableDbusLong
+
 	if actualOutputFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for daemon mode")
 		os.Exit(1)
 	}
 
 	timeout := 30 * time.Second
-	runDaemon(actualInterval, actualOutputFile, timeout, *debug)
+	runDaemon(actualInterval, actualOutputFile, timeout, *debug, actualEnableDbus)
 }
 
 func runHyprPanelCommand(args []string) {
