@@ -68,6 +68,33 @@ This project currently has no tests. The codebase is a single `main.go` file.
 - `flake.nix` - Builds the Go module, provides dev shell
 - `nix/hm-module.nix` - Home Manager module for running as a systemd service
 
+## Git Worktrees
+
+When creating a new feature branch with a worktree, **do NOT checkout the branch first**. The worktree command will fail if the branch is already checked out.
+
+**Correct pattern:**
+
+```bash
+# Stay on main, create branch without checking it out
+git checkout main && git pull
+git branch <branch-name>
+git push -u origin <branch-name>
+
+# Create worktree (this checks out the branch in the new worktree)
+git worktree add ../<branch-name> <branch-name>
+```
+
+**Wrong pattern (causes "already used by worktree" error):**
+
+```bash
+git checkout -b <branch-name>  # DON'T DO THIS
+git worktree add ../<branch-name> <branch-name>  # Will fail!
+```
+
+**Creating draft PRs:** You must have at least one commit on the branch before creating a draft PR. Consider starting with a version bump commit if no other changes are ready yet.
+
+**PR task tracking:** When finishing tasks, check the GitHub PR for any task checkboxes and mark them as completed.
+
 ## Parsing Details
 
 The tool uses regex patterns to parse Claude CLI output. Key patterns are defined at the top of `main.go`:
