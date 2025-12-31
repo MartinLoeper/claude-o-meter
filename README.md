@@ -178,6 +178,7 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | Enable the claude-o-meter daemon service |
 | `package` | package | flake default | The claude-o-meter package to use |
+| `claudeCodePackage` | package | claude-code-nix | The Claude Code CLI package to use. Override to use a different version or your own build |
 | `interval` | string | `"60s"` | How often to query Claude usage metrics |
 | `outputFile` | string | `~/.cache/claude-o-meter.json` | Path where the JSON output will be written |
 | `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
@@ -189,11 +190,14 @@ services.claude-o-meter = {
   enable = true;
   interval = "30s";
   outputFile = "/tmp/claude-usage.json";
+  # claudeCodePackage = pkgs.claude-code;  # Use your own Claude Code package
   # debug = true;  # Enable to troubleshoot issues
 };
 ```
 
 The systemd service automatically includes all required dependencies in PATH (coreutils, procps, expect, util-linux, bash).
+
+**Using your own Claude Code package:** If you want to use a different Claude Code version or avoid the `claude-code-nix` flake input entirely, set `claudeCodePackage` to your own package. When you provide your own package, the flake's claude-code input is not used.
 
 #### Option B: Manual
 
