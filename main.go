@@ -1029,6 +1029,7 @@ Commands:
   query     Query usage once and output to stdout (default if no command given)
   daemon    Run as a daemon, periodically querying and writing to file
   hyprpanel Read from file and output HyprPanel-compatible JSON
+  refresh   Trigger immediate daemon refresh via D-Bus
 
 Global options:
   -v, --version         Show version
@@ -1048,13 +1049,17 @@ Daemon options:
 HyprPanel options:
   -f, --file       Input file path (required)
 
+Refresh options:
+  -d, --debug      Print confirmation message
+
 Examples:
   claude-o-meter                           # Query once, output to stdout
   claude-o-meter query                     # Same as above
   claude-o-meter query --raw               # Include raw CLI output
   claude-o-meter query --hyprpanel-json    # Output for HyprPanel (one-shot)
-  claude-o-meter daemon -i 60s -f /tmp/claude.json
+  claude-o-meter daemon -i 60s -f /tmp/claude.json -b
   claude-o-meter hyprpanel -f /tmp/claude.json  # Read file, output HyprPanel JSON
+  claude-o-meter refresh                        # Trigger daemon to refresh now
 
 Requires the 'claude' CLI to be installed and authenticated.
 `, Version)
@@ -1074,6 +1079,8 @@ func main() {
 		runDaemonCommand(os.Args[2:])
 	case "hyprpanel":
 		runHyprPanelCommand(os.Args[2:])
+	case "refresh":
+		runRefreshCommand(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 		os.Exit(0)
@@ -1260,4 +1267,39 @@ func runHyprPanelCommand(args []string) {
 	output := formatHyprPanelOutput(&snapshot)
 	jsonBytes, _ := json.Marshal(output)
 	fmt.Println(string(jsonBytes))
+}
+
+func runRefreshCommand(args []string) {
+	refreshFlags := flag.NewFlagSet("refresh", flag.ExitOnError)
+	debug := refreshFlags.Bool("d", false, "Enable debug output")
+	debugLong := refreshFlags.Bool("debug", false, "Enable debug output")
+	help := refreshFlags.Bool("h", false, "Show help")
+	helpLong := refreshFlags.Bool("help", false, "Show help")
+
+	refreshFlags.Parse(args)
+
+	if *help || *helpLong {
+		printUsage()
+		os.Exit(0)
+	}
+
+	debugMode := *debug || *debugLong
+
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to session bus: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	obj := conn.Object(dbusServiceName, dbusObjectPath)
+	call := obj.Call(dbusInterface+".RefreshNow", 0)
+	if call.Err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to call RefreshNow: %v\n", call.Err)
+		os.Exit(1)
+	}
+
+	if debugMode {
+		fmt.Println("Refresh triggered successfully")
+	}
 }
