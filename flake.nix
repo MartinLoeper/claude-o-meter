@@ -22,7 +22,15 @@
 
         src = ./.;
 
-        vendorHash = null;
+        vendorHash = "sha256-7tiSwNhq6e4LEh4lUkfh2i4tEdWWL6TxQpYYwYKsfog=";
+
+        nativeBuildInputs = with pkgs; [
+          pkg-config
+        ];
+
+        buildInputs = with pkgs; [
+          dbus
+        ];
 
         ldflags = [
           "-s" "-w"
@@ -71,6 +79,8 @@
               go
               gopls
               gotools
+              pkg-config
+              dbus
             ];
           };
         }

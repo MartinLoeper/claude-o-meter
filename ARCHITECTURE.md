@@ -93,6 +93,102 @@ sequenceDiagram
 
 ---
 
+## D-Bus Integration
+
+The daemon can expose a D-Bus service on the session bus, enabling external tools to trigger immediate usage refreshes without waiting for the next poll interval.
+
+```mermaid
+flowchart TB
+    subgraph "Systemd User Service"
+        daemon["claude-o-meter daemon"]
+        dbus["D-Bus Service<br/>com.github.MartinLoeper.ClaudeOMeter"]
+        file[("~/.cache/claude-o-meter/usage.json")]
+        daemon -->|"writes periodically"| file
+        daemon -.->|"exposes"| dbus
+    end
+
+    subgraph "Data Source"
+        claude["claude /usage"]
+    end
+
+    subgraph "Clients"
+        hyprpanel["HyprPanel Custom Module"]
+        other["Other Status Bars / Scripts"]
+    end
+
+    subgraph "External Triggers"
+        hook["Claude Code Hook"]
+        script["Custom Script"]
+    end
+
+    daemon -->|"executes in PTY"| claude
+    claude -->|"stdout with ANSI"| daemon
+
+    hyprpanel -->|"claude-o-meter hyprpanel"| file
+    other -->|"claude-o-meter hyprpanel"| file
+
+    hook -->|"dbus-send RefreshNow"| dbus
+    script -->|"dbus-send RefreshNow"| dbus
+    dbus -->|"triggers immediate"| daemon
+```
+
+### D-Bus Refresh Sequence
+
+When an external tool triggers a refresh via D-Bus, the daemon immediately queries Claude usage instead of waiting for the next poll cycle:
+
+```mermaid
+sequenceDiagram
+    participant Hook as Claude Code Hook
+    participant DBus as D-Bus Service
+    participant D as Daemon
+    participant CLI as claude /usage
+    participant CF as Cache File
+    participant HP as HyprPanel
+
+    Note over D: Daemon running with --dbus flag
+
+    Hook->>DBus: dbus-send RefreshNow
+    DBus->>D: Signal refresh
+    D->>D: Reset poll timer
+    D->>CLI: Execute in PTY
+    CLI-->>D: ANSI output with usage data
+    D->>D: Parse & strip ANSI
+    D->>CF: Write UsageSnapshot JSON
+
+    Note over HP: Next HyprPanel poll (every 6s)
+    HP->>CF: Read JSON
+    CF-->>HP: Updated UsageSnapshot
+    HP->>HP: Display fresh metrics
+```
+
+### D-Bus Service Details
+
+| Property | Value |
+|----------|-------|
+| Service Name | `com.github.MartinLoeper.ClaudeOMeter` |
+| Object Path | `/com/github/MartinLoeper/ClaudeOMeter` |
+| Interface | `com.github.MartinLoeper.ClaudeOMeter` |
+| Method | `RefreshNow()` |
+
+### Use Case: Claude Code Hooks
+
+The primary use case for D-Bus integration is triggering a refresh after Claude Code completes a request. This provides immediate feedback in the status bar about updated usage:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Claude Code    │────▶│  PostToolUse    │────▶│   dbus-send     │
+│  completes      │     │  Hook fires     │     │   RefreshNow    │
+└─────────────────┘     └─────────────────┘     └────────┬────────┘
+                                                         │
+                                                         ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  HyprPanel      │◀────│  Cache file     │◀────│  Daemon queries │
+│  shows update   │     │  updated        │     │  immediately    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+---
+
 ## Edge Cases
 
 ### Cache File Missing (First Startup)

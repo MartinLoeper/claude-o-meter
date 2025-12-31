@@ -68,7 +68,7 @@ This project currently has no tests. The codebase is a single `main.go` file.
 
 **Single-file Go application** (`main.go`) with three main modes:
 - `query` - One-shot query, outputs JSON to stdout
-- `daemon` - Runs in a loop, writes JSON to file periodically
+- `daemon` - Runs in a loop, writes JSON to file periodically (supports `--dbus` for external refresh triggers)
 - `hyprpanel` - Reads daemon output file, formats for HyprPanel
 
 **Core flow:**
@@ -81,9 +81,16 @@ This project currently has no tests. The codebase is a single `main.go` file.
 - `Quota` - Individual quota with type (session/weekly/model_specific), percentage remaining, reset time
 - `HyprPanelOutput` - HyprPanel module format with text, alt, class, tooltip
 
+**D-Bus integration:**
+
+- Optional D-Bus service (`--dbus` flag) allows external tools to trigger immediate refreshes
+- Uses `github.com/godbus/dbus/v5` for session bus communication
+- Service name: `com.github.MartinLoeper.ClaudeOMeter`, method: `RefreshNow()`
+
 **Nix integration:**
+
 - `flake.nix` - Builds the Go module, provides dev shell
-- `nix/hm-module.nix` - Home Manager module for running as a systemd service
+- `nix/hm-module.nix` - Home Manager module for running as a systemd service (D-Bus enabled by default)
 
 ## Git Worktrees
 
@@ -115,6 +122,7 @@ git worktree add ../<branch-name> <branch-name>  # Will fail!
 ## Parsing Details
 
 The tool uses regex patterns to parse Claude CLI output. Key patterns are defined at the top of `main.go`:
+
 - Account type: `·\s*claude\s+(pro|max|api)`
 - Percentages: `(\d{1,3})\s*%\s*(used|left)`
 - Reset times: Relative durations (`5d 3h`) and absolute times (`Jan 4, 2026, 1am`)

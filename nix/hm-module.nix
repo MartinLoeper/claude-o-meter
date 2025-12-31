@@ -56,6 +56,12 @@ in
       default = false;
       description = "Print claude CLI output in real-time to journalctl for debugging";
     };
+
+    enableDbus = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable D-Bus service for external refresh triggers (e.g., from Claude Code hooks)";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -73,7 +79,7 @@ in
       Service = {
         Type = "simple";
         ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.outputFile}";
-        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}";
+        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}${lib.optionalString cfg.enableDbus " --dbus"}";
         Restart = "always";
         RestartSec = "10s";
 
@@ -96,6 +102,16 @@ in
       Install = {
         WantedBy = [ "default.target" ];
       };
+    };
+
+    # D-Bus service file for session bus activation
+    home.file = lib.mkIf cfg.enableDbus {
+      ".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text = ''
+        [D-BUS Service]
+        Name=com.github.MartinLoeper.ClaudeOMeter
+        Exec=${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"} --dbus
+        SystemdService=claude-o-meter.service
+      '';
     };
   };
 }

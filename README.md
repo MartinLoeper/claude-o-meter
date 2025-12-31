@@ -182,6 +182,7 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 | `interval` | string | `"60s"` | How often to query Claude usage metrics |
 | `outputFile` | string | `~/.cache/claude-o-meter.json` | Path where the JSON output will be written |
 | `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
+| `enableDbus` | bool | `true` | Enable D-Bus service for external refresh triggers |
 
 Example with all options:
 
@@ -308,6 +309,69 @@ claude-o-meter daemon -i 60s -f /path/to/output.json
 - Writes JSON atomically to the output file (temp file + rename)
 - Logs to stderr (captured by journalctl when run as systemd service)
 - Handles SIGTERM/SIGINT for graceful shutdown
+
+## D-Bus Integration
+
+The daemon can expose a D-Bus service on the session bus, allowing external tools to trigger immediate usage refreshes. This is particularly useful for Claude Code hooks that want to update the status bar immediately after a request completes, rather than waiting for the next poll interval.
+
+### Enabling D-Bus
+
+Enable D-Bus with the `--dbus` flag:
+
+```bash
+claude-o-meter daemon -i 60s -f /path/to/output.json --dbus
+```
+
+When using Home Manager, D-Bus is enabled by default. You can disable it with:
+
+```nix
+services.claude-o-meter = {
+  enable = true;
+  enableDbus = false;
+};
+```
+
+### Triggering a Refresh
+
+Once the daemon is running with D-Bus enabled, trigger an immediate refresh:
+
+```bash
+dbus-send --session --dest=com.github.MartinLoeper.ClaudeOMeter \
+  /com/github/MartinLoeper/ClaudeOMeter \
+  com.github.MartinLoeper.ClaudeOMeter.RefreshNow
+```
+
+This immediately queries Claude usage and resets the polling interval timer.
+
+### Claude Code Hook Example
+
+Create a Claude Code hook that refreshes usage after each request. Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          "dbus-send --session --dest=com.github.MartinLoeper.ClaudeOMeter /com/github/MartinLoeper/ClaudeOMeter com.github.MartinLoeper.ClaudeOMeter.RefreshNow"
+        ]
+      }
+    ]
+  }
+}
+```
+
+Now your status bar will update immediately after Claude finishes processing a request.
+
+### D-Bus Service Details
+
+| Property | Value |
+|----------|-------|
+| Service Name | `com.github.MartinLoeper.ClaudeOMeter` |
+| Object Path | `/com/github/MartinLoeper/ClaudeOMeter` |
+| Interface | `com.github.MartinLoeper.ClaudeOMeter` |
+| Method | `RefreshNow()` |
 
 ## Credits
 
