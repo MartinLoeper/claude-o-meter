@@ -180,7 +180,7 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 | `package` | package | flake default | The claude-o-meter package to use |
 | `claudeCodePackage` | package | claude-code-nix | The Claude Code CLI package to use. Override to use a different version or your own build |
 | `interval` | string | `"60s"` | How often to query Claude usage metrics |
-| `outputFile` | string | `~/.cache/claude-o-meter.json` | Path where the JSON output will be written |
+| `stateFile` | string | `$XDG_CACHE_HOME/claude-o-meter.json` | Path where the JSON output will be written |
 | `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
 | `enableDbus` | bool | `true` | Enable D-Bus service for external refresh triggers |
 
@@ -190,7 +190,7 @@ Example with all options:
 services.claude-o-meter = {
   enable = true;
   interval = "30s";
-  outputFile = "/tmp/claude-usage.json";
+  stateFile = "/tmp/claude-usage.json";
   # claudeCodePackage = pkgs.claude-code;  # Use your own Claude Code package
   # debug = true;  # Enable to troubleshoot issues
 };

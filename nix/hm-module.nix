@@ -44,7 +44,7 @@ in
       description = "How often to query Claude usage metrics";
     };
 
-    outputFile = lib.mkOption {
+    stateFile = lib.mkOption {
       type = lib.types.str;
       default = "${config.xdg.cacheHome}/claude-o-meter.json";
       example = "/tmp/claude-usage.json";
@@ -78,8 +78,8 @@ in
 
       Service = {
         Type = "simple";
-        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.outputFile}";
-        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}${lib.optionalString cfg.enableDbus " --dbus"}";
+        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.stateFile}";
+        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"}${lib.optionalString cfg.enableDbus " --dbus"}";
         Restart = "always";
         RestartSec = "10s";
 
@@ -109,7 +109,7 @@ in
       ".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text = ''
         [D-BUS Service]
         Name=com.github.MartinLoeper.ClaudeOMeter
-        Exec=${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"} --dbus
+        Exec=${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"} --dbus
         SystemdService=claude-o-meter.service
       '';
     };
