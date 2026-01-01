@@ -21,7 +21,7 @@ pkgs.runCommand "claude-o-meter-marketplace" { } ''
       "name": "claude-o-meter-refresh",
       "source": "./claude-o-meter-refresh",
       "description": "Automatically refresh claude-o-meter metrics when Claude conversations end",
-      "version": "1.0.1"
+      "version": "1.0.2"
     }]
   }
   EOF

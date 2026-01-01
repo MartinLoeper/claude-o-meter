@@ -3,7 +3,7 @@
 
 let
   pluginName = "claude-o-meter-refresh";
-  version = "1.0.1";
+  version = "1.0.2";
 in pkgs.stdenvNoCC.mkDerivation {
   pname = "claude-o-meter-cc-plugin";
   inherit version;
