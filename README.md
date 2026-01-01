@@ -182,10 +182,12 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 | `enable` | bool | `false` | Enable the claude-o-meter daemon service |
 | `package` | package | flake default | The claude-o-meter package to use |
 | `claudeCodePackage` | package | claude-code-nix | The Claude Code CLI package to use. Override to use a different version or your own build |
-| `interval` | string | `"60s"` | How often to query Claude usage metrics |
+| `interval` | string | `"60s"` (or `"5m"` with hooks) | How often to query Claude usage metrics |
 | `stateFile` | string | `$XDG_CACHE_HOME/claude-o-meter.json` | Path where the JSON output will be written |
 | `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
 | `enableDbus` | bool | `true` | Enable D-Bus service for external refresh triggers |
+| `enableClaudeCodeHooks` | bool | `false` | Install Claude Code plugin that triggers refresh on conversation end |
+| `claudeCodeSettingsManaged` | bool | `false` | Set to `true` if you use `programs.claude-code.settings` in your config |
 
 Example with all options:
 
@@ -194,12 +196,28 @@ services.claude-o-meter = {
   enable = true;
   interval = "30s";
   stateFile = "/tmp/claude-usage.json";
+  enableClaudeCodeHooks = true;  # Auto-refresh when Claude conversations end
+  # claudeCodeSettingsManaged = true;  # Set if using programs.claude-code.settings
   # claudeCodePackage = pkgs.claude-code;  # Use your own Claude Code package
   # debug = true;  # Enable to troubleshoot issues
 };
 ```
 
 The systemd service automatically includes all required dependencies in PATH (coreutils, procps, expect, util-linux, bash).
+
+##### Claude Code Hooks Integration
+
+When `enableClaudeCodeHooks = true`, the module:
+
+1. **Installs a Claude Code plugin** at `~/.claude/claude-o-meter-plugins/` with a Stop hook that calls `claude-o-meter refresh` when conversations end
+2. **Registers the plugin** in Claude Code settings (`extraKnownMarketplaces` and `enabledPlugins`)
+3. **Changes the default polling interval** to 5 minutes (since real-time updates come from the hook)
+
+This provides immediate status bar updates when Claude finishes responding, rather than waiting for the next poll cycle.
+
+**Settings registration behavior:**
+- If `claudeCodeSettingsManaged = false` (default): Uses a Home Manager activation script to merge settings into `~/.claude/settings.json` via `jq`
+- If `claudeCodeSettingsManaged = true`: Adds settings via `programs.claude-code.settings` (requires the claude-code Home Manager module)
 
 **Using your own Claude Code package:** If you want to use a different Claude Code version or avoid the `claude-code-nix` flake input entirely, set `claudeCodePackage` to your own package. When you provide your own package, the flake's claude-code input is not used.
 

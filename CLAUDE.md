@@ -91,6 +91,12 @@ This project currently has no tests. The codebase is a single `main.go` file.
 
 - `flake.nix` - Builds the Go module, provides dev shell
 - `nix/hm-module.nix` - Home Manager module for running as a systemd service (D-Bus enabled by default)
+- `nix/claude-code-plugin.nix` - Claude Code plugin with Stop hook for real-time refresh
+- `nix/claude-code-marketplace.nix` - Marketplace package for plugin installation
+
+**Claude Code integration:**
+
+The `enableClaudeCodeHooks` option installs a Claude Code plugin that triggers `claude-o-meter refresh` when conversations end. This provides real-time status bar updates without relying solely on polling. See `ARCHITECTURE.md` for the interaction diagram.
 
 ## Git Worktrees
 
