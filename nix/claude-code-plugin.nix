@@ -31,9 +31,14 @@ in pkgs.stdenvNoCC.mkDerivation {
       "hooks": {
         "Stop": [
           {
-            "type": "command",
-            "command": "${claudeOMeterPackage}/bin/claude-o-meter refresh",
-            "timeout": 7
+            "matcher": "",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "${claudeOMeterPackage}/bin/claude-o-meter refresh",
+                "timeout": 7
+              }
+            ]
           }
         ]
       }
