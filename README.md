@@ -77,10 +77,10 @@ claude-o-meter query --hyprpanel-json
 claude-o-meter --raw
 
 # Run as daemon (writes to file periodically)
-claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
+claude-o-meter daemon -i 60s -s ${XDG_CACHE_HOME:-~/.cache}/claude-o-meter.json
 
 # Read daemon output and format for HyprPanel
-claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json
+claude-o-meter hyprpanel -s ${XDG_CACHE_HOME:-~/.cache}/claude-o-meter.json
 
 # Show help
 claude-o-meter --help
@@ -179,7 +179,7 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 | `enable` | bool | `false` | Enable the claude-o-meter daemon service |
 | `package` | package | flake default | The claude-o-meter package to use |
 | `interval` | string | `"60s"` | How often to query Claude usage metrics |
-| `outputFile` | string | `~/.cache/claude-o-meter.json` | Path where the JSON output will be written |
+| `stateFile` | string | `${config.xdg.cacheHome}/claude-o-meter.json` | Path where the daemon state will be written (defaults to XDG cache directory) |
 | `debug` | bool | `false` | Print claude CLI output to journalctl for debugging |
 
 Example with all options:
@@ -188,7 +188,7 @@ Example with all options:
 services.claude-o-meter = {
   enable = true;
   interval = "30s";
-  outputFile = "/tmp/claude-usage.json";
+  stateFile = "${config.xdg.cacheHome}/claude-o-meter-custom.json";
   # debug = true;  # Enable to troubleshoot issues
 };
 ```
@@ -200,7 +200,7 @@ The systemd service automatically includes all required dependencies in PATH (co
 Run the daemon manually or create your own systemd service:
 
 ```bash
-claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
+claude-o-meter daemon -i 60s -s ${XDG_CACHE_HOME:-~/.cache}/claude-o-meter.json
 ```
 
 ### Step 2: Add HyprPanel Module Config
@@ -224,7 +224,7 @@ Add to `~/.config/hyprpanel/modules.json`:
         "truncationSize": 0,
         "label": "{text}",
         "tooltip": "{tooltip}",
-        "execute": "claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json",
+        "execute": "claude-o-meter hyprpanel -s ${XDG_CACHE_HOME:-$HOME/.cache}/claude-o-meter.json",
         "actions": {
             "onLeftClick": "xdg-open https://claude.ai/settings/usage"
         },
@@ -297,7 +297,7 @@ systemctl --user restart hyprpanel.service
 The daemon mode is designed for integrations like status bars where calling the CLI on each poll would cause timeouts:
 
 ```bash
-claude-o-meter daemon -i 60s -f /path/to/output.json
+claude-o-meter daemon -i 60s -s /path/to/state.json
 ```
 
 - Queries Claude usage at the specified interval

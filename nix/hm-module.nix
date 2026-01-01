@@ -23,11 +23,11 @@ in
       description = "How often to query Claude usage metrics";
     };
 
-    outputFile = lib.mkOption {
+    stateFile = lib.mkOption {
       type = lib.types.str;
       default = "${config.xdg.cacheHome}/claude-o-meter.json";
-      example = "/tmp/claude-usage.json";
-      description = "Path where the JSON output will be written";
+      example = "${config.xdg.cacheHome}/claude-usage.json";
+      description = "Path where the daemon state will be written (defaults to XDG cache directory)";
     };
 
     debug = lib.mkOption {
@@ -51,7 +51,7 @@ in
 
       Service = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.outputFile}${lib.optionalString cfg.debug " --debug"}";
+        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -s ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"}";
         Restart = "always";
         RestartSec = "10s";
 

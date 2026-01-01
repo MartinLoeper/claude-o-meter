@@ -958,20 +958,20 @@ Query options:
   --hyprpanel-json      Output in HyprPanel module format
 
 Daemon options:
-  -i, --interval   Query interval (default: 60s)
-  -f, --file       Output file path (required)
-  --debug          Print claude CLI output in real-time
+  -i, --interval     Query interval (default: 60s)
+  -s, --state-file   State file path where metrics are written (required)
+  --debug            Print claude CLI output in real-time
 
 HyprPanel options:
-  -f, --file       Input file path (required)
+  -s, --state-file   State file path to read metrics from (required)
 
 Examples:
   claude-o-meter                           # Query once, output to stdout
   claude-o-meter query                     # Same as above
   claude-o-meter query --raw               # Include raw CLI output
   claude-o-meter query --hyprpanel-json    # Output for HyprPanel (one-shot)
-  claude-o-meter daemon -i 60s -f /tmp/claude.json
-  claude-o-meter hyprpanel -f /tmp/claude.json  # Read file, output HyprPanel JSON
+  claude-o-meter daemon -i 60s -s ~/.cache/claude.json
+  claude-o-meter hyprpanel -s ~/.cache/claude.json  # Read file, output HyprPanel JSON
 
 Requires the 'claude' CLI to be installed and authenticated.
 `, Version)
@@ -1072,8 +1072,8 @@ func runDaemonCommand(args []string) {
 	daemonFlags := flag.NewFlagSet("daemon", flag.ExitOnError)
 	interval := daemonFlags.Duration("i", 60*time.Second, "Query interval")
 	intervalLong := daemonFlags.Duration("interval", 60*time.Second, "Query interval")
-	outputFile := daemonFlags.String("f", "", "Output file path (required)")
-	outputFileLong := daemonFlags.String("file", "", "Output file path (required)")
+	stateFile := daemonFlags.String("s", "", "State file path (required)")
+	stateFileLong := daemonFlags.String("state-file", "", "State file path (required)")
 	debug := daemonFlags.Bool("debug", false, "Print claude CLI output in real-time")
 	help := daemonFlags.Bool("h", false, "Show help")
 	helpLong := daemonFlags.Bool("help", false, "Show help")
@@ -1091,24 +1091,24 @@ func runDaemonCommand(args []string) {
 		actualInterval = *intervalLong
 	}
 
-	actualOutputFile := *outputFile
-	if *outputFileLong != "" {
-		actualOutputFile = *outputFileLong
+	actualStateFile := *stateFile
+	if *stateFileLong != "" {
+		actualStateFile = *stateFileLong
 	}
 
-	if actualOutputFile == "" {
-		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for daemon mode")
+	if actualStateFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: -s/--state-file is required for daemon mode")
 		os.Exit(1)
 	}
 
 	timeout := 30 * time.Second
-	runDaemon(actualInterval, actualOutputFile, timeout, *debug)
+	runDaemon(actualInterval, actualStateFile, timeout, *debug)
 }
 
 func runHyprPanelCommand(args []string) {
 	hyprFlags := flag.NewFlagSet("hyprpanel", flag.ExitOnError)
-	inputFile := hyprFlags.String("f", "", "Input file path (required)")
-	inputFileLong := hyprFlags.String("file", "", "Input file path (required)")
+	stateFile := hyprFlags.String("s", "", "State file path (required)")
+	stateFileLong := hyprFlags.String("state-file", "", "State file path (required)")
 	help := hyprFlags.Bool("h", false, "Show help")
 	helpLong := hyprFlags.Bool("help", false, "Show help")
 
@@ -1119,18 +1119,18 @@ func runHyprPanelCommand(args []string) {
 		os.Exit(0)
 	}
 
-	actualInputFile := *inputFile
-	if *inputFileLong != "" {
-		actualInputFile = *inputFileLong
+	actualStateFile := *stateFile
+	if *stateFileLong != "" {
+		actualStateFile = *stateFileLong
 	}
 
-	if actualInputFile == "" {
-		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for hyprpanel mode")
+	if actualStateFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: -s/--state-file is required for hyprpanel mode")
 		os.Exit(1)
 	}
 
 	// Check if file exists
-	if _, err := os.Stat(actualInputFile); os.IsNotExist(err) {
+	if _, err := os.Stat(actualStateFile); os.IsNotExist(err) {
 		// File doesn't exist - daemon hasn't written yet
 		output := formatHyprPanelLoading()
 		jsonBytes, _ := json.Marshal(output)
@@ -1139,7 +1139,7 @@ func runHyprPanelCommand(args []string) {
 	}
 
 	// Read and parse the file
-	data, err := os.ReadFile(actualInputFile)
+	data, err := os.ReadFile(actualStateFile)
 	if err != nil {
 		output := formatHyprPanelError("Failed to read file: " + err.Error())
 		jsonBytes, _ := json.Marshal(output)
