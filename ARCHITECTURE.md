@@ -91,6 +91,10 @@ sequenceDiagram
 - **Decoupling**: Status bars poll frequently (every few seconds). The daemon polls infrequently (every 60s by default).
 - **Reliability**: If the daemon fails, clients show stale data rather than hanging.
 
+### Auto-Refresh on Quota Reset
+
+The daemon also schedules an automatic refresh 60 seconds after the earliest quota reset time. This ensures the status bar displays 0% usage promptly after quotas renew, without waiting for the next poll interval.
+
 ---
 
 ## D-Bus Integration
