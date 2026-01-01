@@ -82,6 +82,9 @@ claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json
 # Read daemon output and format for HyprPanel
 claude-o-meter hyprpanel -f ~/.cache/claude-o-meter.json
 
+# Trigger immediate daemon refresh via D-Bus
+claude-o-meter refresh
+
 # Show help
 claude-o-meter --help
 ```
@@ -336,12 +339,18 @@ services.claude-o-meter = {
 Once the daemon is running with D-Bus enabled, trigger an immediate refresh:
 
 ```bash
+claude-o-meter refresh
+```
+
+This immediately queries Claude usage and resets the polling interval timer.
+
+Alternatively, you can call the D-Bus method directly:
+
+```bash
 dbus-send --session --dest=com.github.MartinLoeper.ClaudeOMeter \
   /com/github/MartinLoeper/ClaudeOMeter \
   com.github.MartinLoeper.ClaudeOMeter.RefreshNow
 ```
-
-This immediately queries Claude usage and resets the polling interval timer.
 
 ### Claude Code Hook Example
 
@@ -354,7 +363,7 @@ Create a Claude Code hook that refreshes usage after each request. Add to `~/.cl
       {
         "matcher": ".*",
         "hooks": [
-          "dbus-send --session --dest=com.github.MartinLoeper.ClaudeOMeter /com/github/MartinLoeper/ClaudeOMeter com.github.MartinLoeper.ClaudeOMeter.RefreshNow"
+          "claude-o-meter refresh"
         ]
       }
     ]
