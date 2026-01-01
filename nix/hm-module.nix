@@ -15,6 +15,30 @@ let
   claudeCodeMarketplace = import ./claude-code-marketplace.nix {
     inherit pkgs claudeCodePlugin;
   };
+
+  # Path where the marketplace is installed
+  marketplacePath = "${config.home.homeDirectory}/.claude/claude-o-meter-plugins";
+
+  # Claude Code settings to add for the marketplace and plugin
+  claudeCodeMarketplaceSettings = {
+    extraKnownMarketplaces = {
+      claude-o-meter-plugins = {
+        source = {
+          source = "directory";
+          path = marketplacePath;
+        };
+      };
+    };
+    enabledPlugins = {
+      "claude-o-meter-refresh@claude-o-meter-plugins" = true;
+    };
+  };
+
+  # Check if programs.claude-code.settings is being used (non-empty)
+  # This determines whether to use Nix-managed settings or activation script
+  claudeCodeSettingsManaged =
+    (config ? programs.claude-code.settings) &&
+    (config.programs.claude-code.settings != {});
 in
 {
   options.services.claude-o-meter = {
@@ -160,6 +184,49 @@ in
 
       # Install the Claude Code plugin marketplace via symlink
       home.file.".claude/claude-o-meter-plugins".source = claudeCodeMarketplace;
+    })
+
+    # Claude Code settings registration - Nix-managed settings
+    # When programs.claude-code.settings is used, add marketplace/plugin config there
+    (lib.mkIf (cfg.enableClaudeCodeHooks && claudeCodeSettingsManaged) {
+      programs.claude-code.settings = lib.mkMerge [
+        claudeCodeMarketplaceSettings
+      ];
+    })
+
+    # Claude Code settings registration - Activation script fallback
+    # When programs.claude-code.settings is NOT used, modify settings.json directly
+    (lib.mkIf (cfg.enableClaudeCodeHooks && !claudeCodeSettingsManaged) {
+      home.activation.claudeOMeterPluginSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        CLAUDE_SETTINGS_DIR="${config.home.homeDirectory}/.claude"
+        CLAUDE_SETTINGS_FILE="$CLAUDE_SETTINGS_DIR/settings.json"
+
+        # Ensure .claude directory exists
+        mkdir -p "$CLAUDE_SETTINGS_DIR"
+
+        # Settings to merge
+        NEW_SETTINGS='${builtins.toJSON claudeCodeMarketplaceSettings}'
+
+        if [ ! -f "$CLAUDE_SETTINGS_FILE" ]; then
+          # Create new settings file
+          echo "$NEW_SETTINGS" > "$CLAUDE_SETTINGS_FILE"
+          $VERBOSE_ECHO "Created Claude Code settings with claude-o-meter marketplace"
+        else
+          # Merge settings using jq for proper JSON handling
+          MERGED=$(${pkgs.jq}/bin/jq -s '
+            # Deep merge function for nested objects
+            def deep_merge:
+              if type == "array" and (.[0] | type) == "object" then
+                reduce .[] as $obj ({}; . * $obj)
+              else
+                .
+              end;
+            [.[0], .[1]] | deep_merge
+          ' "$CLAUDE_SETTINGS_FILE" <(echo "$NEW_SETTINGS"))
+          echo "$MERGED" > "$CLAUDE_SETTINGS_FILE"
+          $VERBOSE_ECHO "Merged Claude Code settings with claude-o-meter marketplace"
+        fi
+      '';
     })
   ]);
 }
