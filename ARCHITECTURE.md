@@ -189,6 +189,134 @@ The primary use case for D-Bus integration is triggering a refresh after Claude 
 
 ---
 
+## Claude Code Hooks Integration (`enableClaudeCodeHooks`)
+
+When `enableClaudeCodeHooks = true` in the Home Manager module, a Claude Code plugin is installed that automatically triggers a usage refresh when Claude conversations end. This provides real-time status bar updates without relying on frequent polling.
+
+### Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph "Claude Code"
+        cc["Claude Code CLI"]
+        plugin["claude-o-meter-refresh plugin"]
+        hooks["hooks/hooks.json"]
+        plugin --> hooks
+    end
+
+    subgraph "Systemd User Service"
+        daemon["claude-o-meter daemon"]
+        dbus["D-Bus Service<br/>com.github.MartinLoeper.ClaudeOMeter"]
+        file[("~/.cache/claude-o-meter.json")]
+        daemon -->|"writes periodically"| file
+        daemon -.->|"exposes"| dbus
+    end
+
+    subgraph "Status Bar"
+        hyprpanel["HyprPanel"]
+    end
+
+    cc -->|"Stop event"| hooks
+    hooks -->|"claude-o-meter refresh"| dbus
+    dbus -->|"triggers immediate query"| daemon
+    hyprpanel -->|"reads"| file
+```
+
+### How It Works
+
+1. **Plugin Installation**: The Home Manager module creates a Claude Code marketplace at `~/.claude/claude-o-meter-plugins/` containing the `claude-o-meter-refresh` plugin
+2. **Settings Registration**: The plugin is registered in Claude Code's `settings.json` via `extraKnownMarketplaces` and `enabledPlugins`
+3. **Stop Hook**: When a Claude conversation ends, the plugin's Stop hook executes `claude-o-meter refresh`
+4. **D-Bus Refresh**: The refresh command sends a D-Bus signal to the daemon, triggering an immediate usage query
+5. **Status Update**: The daemon writes fresh metrics to the cache file, which the status bar picks up on its next poll
+
+### Stop Hook Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CC as Claude Code
+    participant Plugin as Stop Hook
+    participant DBus as D-Bus
+    participant Daemon as claude-o-meter daemon
+    participant CLI as claude /usage
+    participant File as Cache File
+    participant HP as HyprPanel
+
+    User->>CC: Sends message
+    CC->>CC: Processes request
+    CC->>User: Returns response
+    CC->>Plugin: Fires Stop event
+
+    Plugin->>DBus: claude-o-meter refresh
+    DBus->>Daemon: RefreshNow()
+    Daemon->>CLI: Execute in PTY
+    CLI-->>Daemon: Usage data
+    Daemon->>File: Write updated JSON
+
+    Note over HP: Next poll (every 6s)
+    HP->>File: Read JSON
+    File-->>HP: Fresh UsageSnapshot
+    HP->>HP: Display updated metrics
+```
+
+### Plugin Structure
+
+```
+~/.claude/claude-o-meter-plugins/
+├── .claude-plugin/
+│   └── marketplace.json          # Marketplace metadata
+└── claude-o-meter-refresh/
+    ├── package.json              # Plugin metadata
+    └── hooks/
+        └── hooks.json            # Stop hook configuration
+```
+
+### hooks.json Configuration
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/nix/store/.../bin/claude-o-meter refresh",
+            "timeout": 7
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The command uses the full Nix store path to ensure it works regardless of the user's PATH.
+
+### Why Stop Hook Instead of PostToolUse?
+
+| Hook | When it fires | Use case |
+|------|---------------|----------|
+| `PostToolUse` | After each tool call | Too frequent, would spam refreshes |
+| `Stop` | When conversation ends | Perfect timing for usage update |
+
+The Stop hook fires once per conversation, providing an accurate usage snapshot after Claude has finished processing.
+
+### Interval Adjustment
+
+When hooks are enabled, the default polling interval changes from 60 seconds to 5 minutes:
+
+| Mode | Interval | Reason |
+|------|----------|--------|
+| Polling only | 60s | Frequent updates needed |
+| With hooks | 5m | Hooks provide real-time updates; polling is just a fallback |
+
+Users can override this with the `interval` option if needed.
+
+---
+
 ## Edge Cases
 
 ### Cache File Missing (First Startup)
