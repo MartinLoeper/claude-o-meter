@@ -445,6 +445,29 @@ func formatDuration(seconds int64) string {
 	return strings.Join(parts, " ")
 }
 
+// calculateNextResetRefresh finds the earliest quota reset time and returns
+// a duration for when to schedule the next refresh (60 seconds after reset).
+// Returns nil if no valid reset times are found.
+func calculateNextResetRefresh(quotas []Quota) *time.Duration {
+	var minSeconds int64 = -1
+
+	for _, q := range quotas {
+		if q.TimeRemainingSeconds != nil && *q.TimeRemainingSeconds > 0 {
+			if minSeconds < 0 || *q.TimeRemainingSeconds < minSeconds {
+				minSeconds = *q.TimeRemainingSeconds
+			}
+		}
+	}
+
+	if minSeconds < 0 {
+		return nil
+	}
+
+	// Schedule refresh 60 seconds after the reset
+	refreshDelay := time.Duration(minSeconds+60) * time.Second
+	return &refreshDelay
+}
+
 func parseQuotas(text string) []Quota {
 	lines := strings.Split(text, "\n")
 	var quotas []Quota
@@ -965,6 +988,33 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Reset timer for auto-refresh when quota resets
+	var resetTimer *time.Timer
+	var resetTimerChan <-chan time.Time
+
+	// scheduleResetRefresh calculates and schedules the next reset-based refresh
+	scheduleResetRefresh := func(quotas []Quota) {
+		// Stop existing timer if any and drain channel if it already fired
+		if resetTimer != nil {
+			if !resetTimer.Stop() {
+				select {
+				case <-resetTimer.C:
+				default:
+				}
+			}
+		}
+
+		delay := calculateNextResetRefresh(quotas)
+		if delay == nil {
+			resetTimerChan = nil
+			return
+		}
+
+		resetTimer = time.NewTimer(*delay)
+		resetTimerChan = resetTimer.C
+		log.Printf("Scheduled reset refresh in %s", delay)
+	}
+
 	// Run immediately on start
 	doQuery := func() {
 		snapshot, err := runQuery(false, timeout, debug)
@@ -1001,6 +1051,9 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 		} else {
 			log.Printf("Query returned no quota data")
 		}
+
+		// Schedule next reset-based refresh
+		scheduleResetRefresh(snapshot.Quotas)
 	}
 
 	doQuery()
@@ -1013,8 +1066,15 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			log.Printf("D-Bus refresh requested")
 			doQuery()
 			ticker.Reset(interval) // Reset timer after manual refresh
+		case <-resetTimerChan:
+			log.Printf("Quota reset timer fired, refreshing...")
+			doQuery()
+			ticker.Reset(interval) // Reset regular ticker after reset refresh
 		case sig := <-sigChan:
 			log.Printf("Received signal %v, shutting down...", sig)
+			if resetTimer != nil {
+				resetTimer.Stop()
+			}
 			return
 		}
 	}
