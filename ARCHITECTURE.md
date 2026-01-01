@@ -404,3 +404,57 @@ const (
     AccountTypeUnknown = "unknown" // Unrecognized format
 )
 ```
+
+---
+
+## Desktop Notifications
+
+The daemon can send desktop notifications via D-Bus when usage exceeds a configurable threshold.
+
+### Configuration
+
+| Flag | Description |
+|------|-------------|
+| `--notify-threshold` | Percentage threshold (0-100). Notification triggers when session usage >= threshold |
+| `--notify-timeout` | Display timeout (e.g., "5s"). 0 = never auto-close, unset = server default |
+| `--notify-icon` | Path to notification icon (PNG/SVG) |
+
+### Home Manager Options
+
+```nix
+services.claude-o-meter = {
+  enable = true;
+  notifyThreshold = 80;   # Notify at 80% usage
+  notifyTimeout = "5s";   # Auto-close after 5 seconds
+};
+```
+
+### Behavior
+
+1. **Threshold Check**: After each daemon refresh, session usage is compared against the threshold
+2. **One-Shot Notification**: Notification is sent once when threshold is exceeded
+3. **Reset on Drop**: Notification state resets when usage drops below threshold, allowing a new notification on the next crossing
+
+```mermaid
+stateDiagram-v2
+    [*] --> BelowThreshold
+    BelowThreshold --> AboveThreshold: usage >= threshold
+    AboveThreshold --> BelowThreshold: usage < threshold
+
+    state AboveThreshold {
+        [*] --> SendNotification
+        SendNotification --> NotificationSent: success
+        NotificationSent --> NotificationSent: usage still >= threshold
+    }
+```
+
+### Technical Details
+
+Notifications are sent via the `org.freedesktop.Notifications.Notify` D-Bus method. The daemon connects to the session bus and calls the notification service provided by the desktop environment (e.g., mako, dunst, GNOME Shell).
+
+| Parameter | Value |
+|-----------|-------|
+| `app_name` | `claude-o-meter` |
+| `app_icon` | Path to Claude icon PNG |
+| `summary` | `Claude Usage High` |
+| `body` | `Session usage at X% (threshold: Y%)` |
