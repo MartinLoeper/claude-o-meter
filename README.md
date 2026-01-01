@@ -2,6 +2,8 @@
 
 A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `claude /usage`. Use it to display your Claude plan usage in status bars like [HyprPanel](https://hyprpanel.com/). Currently ships with NixOS installation instructions—PRs for other Linux distros are welcome!
 
+![HyprPanel showing Claude usage metrics](assets/hyprpanel.png)
+
 ## Why?
 
 Anthropic doesn't provide a public API for querying Claude usage metrics. The author was annoyed by not being able to display Claude usage in [HyprPanel](https://hyprpanel.com/) (a status bar for Hyprland). This tool solves that by scraping the metrics from the Claude CLI and outputting them as JSON, making it easy to integrate with status bars, scripts, and other tools.
@@ -151,8 +153,6 @@ In HyprPanel mode, auth errors display "!" with a descriptive tooltip.
 ## HyprPanel Integration
 
 Here's how to display Claude usage in [HyprPanel](https://hyprpanel.com/):
-
-![HyprPanel showing Claude usage metrics](assets/hyprpanel.png?)
 
 ### Step 1: Start the Daemon
 
