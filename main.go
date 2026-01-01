@@ -969,9 +969,46 @@ func startDBusService(refreshChan chan struct{}) {
 	select {} // Block forever, methods are called in separate goroutines
 }
 
+// sendNotification sends a desktop notification via D-Bus (org.freedesktop.Notifications)
+func sendNotification(summary, body, iconPath string, timeoutMs int32) error {
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		return fmt.Errorf("failed to connect to session bus: %w", err)
+	}
+
+	obj := conn.Object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+	call := obj.Call("org.freedesktop.Notifications.Notify", 0,
+		"claude-o-meter",              // app_name
+		uint32(0),                     // replaces_id (0 = new notification)
+		iconPath,                      // app_icon
+		summary,                       // summary
+		body,                          // body
+		[]string{},                    // actions (empty for simple notification)
+		map[string]dbus.Variant{},     // hints (empty for basic notification)
+		timeoutMs,                     // expire_timeout (-1 = server default, 0 = never, >0 = ms)
+	)
+
+	if call.Err != nil {
+		return fmt.Errorf("failed to send notification: %w", call.Err)
+	}
+
+	return nil
+}
+
+// NotifyConfig holds notification configuration for the daemon
+type NotifyConfig struct {
+	Threshold int    // Percentage threshold (0-100), 0 = disabled
+	TimeoutMs int32  // Notification timeout in milliseconds (-1 = server default, 0 = never)
+	IconPath  string // Path to icon file
+}
+
 // runDaemon runs the query in a loop, writing results to the output file
-func runDaemon(interval time.Duration, outputFile string, timeout time.Duration, debug bool, enableDbus bool) {
+func runDaemon(interval time.Duration, outputFile string, timeout time.Duration, debug bool, enableDbus bool, notifyConfig *NotifyConfig) {
 	log.Printf("Starting daemon: interval=%s, output=%s, debug=%v, dbus=%v", interval, outputFile, debug, enableDbus)
+	if notifyConfig != nil && notifyConfig.Threshold > 0 {
+		log.Printf("Notifications enabled: threshold=%d%%, timeout=%dms, icon=%s",
+			notifyConfig.Threshold, notifyConfig.TimeoutMs, notifyConfig.IconPath)
+	}
 
 	// Create refresh channel for D-Bus triggers
 	refreshChan := make(chan struct{}, 1)
@@ -1015,6 +1052,10 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 		log.Printf("Scheduled reset refresh in %s", delay)
 	}
 
+	// Track notification state to avoid spamming
+	// Reset when usage drops below threshold
+	notificationSent := false
+
 	// Run immediately on start
 	doQuery := func() {
 		snapshot, err := runQuery(false, timeout, debug)
@@ -1048,6 +1089,33 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			log.Printf("Query successful: %s quota at %.0f%%",
 				snapshot.AccountType,
 				100-snapshot.Quotas[0].PercentRemaining)
+
+			// Check if notification threshold is exceeded (session quota only)
+			if notifyConfig != nil && notifyConfig.Threshold > 0 {
+				sessionUsed := 100 - snapshot.Quotas[0].PercentRemaining
+				if sessionUsed >= float64(notifyConfig.Threshold) {
+					if !notificationSent {
+						err := sendNotification(
+							"Claude Usage High",
+							fmt.Sprintf("Session usage at %.0f%% (threshold: %d%%)", sessionUsed, notifyConfig.Threshold),
+							notifyConfig.IconPath,
+							notifyConfig.TimeoutMs,
+						)
+						if err != nil {
+							log.Printf("Failed to send notification: %v", err)
+						} else {
+							log.Printf("Notification sent: session usage at %.0f%%", sessionUsed)
+							notificationSent = true
+						}
+					}
+				} else {
+					// Reset notification state when usage drops below threshold
+					if notificationSent {
+						log.Printf("Usage dropped below threshold, notification reset")
+					}
+					notificationSent = false
+				}
+			}
 		} else {
 			log.Printf("Query returned no quota data")
 		}
@@ -1101,10 +1169,13 @@ Query options:
   --hyprpanel-json      Output in HyprPanel module format
 
 Daemon options:
-  -i, --interval   Query interval (default: 60s)
-  -f, --file       Output file path (required)
-  -b, --dbus       Enable D-Bus service for external refresh triggers
-  --debug          Print claude CLI output in real-time
+  -i, --interval        Query interval (default: 60s)
+  -f, --file            Output file path (required)
+  -b, --dbus            Enable D-Bus service for external refresh triggers
+  --debug               Print claude CLI output in real-time
+  -t, --notify-threshold  Notify when session usage >= this %% (0 = disabled)
+  --notify-timeout      Notification display timeout (e.g., 5s; 0 = never)
+  --notify-icon         Path to notification icon (PNG/SVG)
 
 HyprPanel options:
   -f, --file       Input file path (required)
@@ -1227,6 +1298,10 @@ func runDaemonCommand(args []string) {
 	enableDbus := daemonFlags.Bool("b", false, "Enable D-Bus service for external refresh triggers")
 	enableDbusLong := daemonFlags.Bool("dbus", false, "Enable D-Bus service for external refresh triggers")
 	debug := daemonFlags.Bool("debug", false, "Print claude CLI output in real-time")
+	notifyThreshold := daemonFlags.Int("t", 0, "Notify when session usage >= this percentage (0 = disabled)")
+	notifyThresholdLong := daemonFlags.Int("notify-threshold", 0, "Notify when session usage >= this percentage (0 = disabled)")
+	notifyTimeout := daemonFlags.Duration("notify-timeout", 0, "Notification display timeout (0 = never auto-close, default = server decides)")
+	notifyIcon := daemonFlags.String("notify-icon", "", "Path to notification icon (PNG/SVG)")
 	help := daemonFlags.Bool("h", false, "Show help")
 	helpLong := daemonFlags.Bool("help", false, "Show help")
 
@@ -1250,13 +1325,49 @@ func runDaemonCommand(args []string) {
 
 	actualEnableDbus := *enableDbus || *enableDbusLong
 
+	// Determine notification threshold
+	actualNotifyThreshold := *notifyThreshold
+	if *notifyThresholdLong != 0 {
+		actualNotifyThreshold = *notifyThresholdLong
+	}
+
+	// Validate threshold
+	if actualNotifyThreshold < 0 || actualNotifyThreshold > 100 {
+		fmt.Fprintln(os.Stderr, "Error: --notify-threshold must be between 0 and 100")
+		os.Exit(1)
+	}
+
 	if actualOutputFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: -f/--file is required for daemon mode")
 		os.Exit(1)
 	}
 
+	// Build notification config if threshold is set
+	var notifyConfig *NotifyConfig
+	if actualNotifyThreshold > 0 {
+		// Convert timeout duration to milliseconds
+		// 0 duration means "never auto-close" (0 in DBus)
+		// If user didn't set it, use -1 to let server decide
+		var timeoutMs int32 = -1 // server default
+		if *notifyTimeout > 0 {
+			timeoutMs = int32(notifyTimeout.Milliseconds())
+		} else if *notifyTimeout == 0 && daemonFlags.Lookup("notify-timeout").Value.String() != "0s" {
+			// User didn't specify, use server default
+			timeoutMs = -1
+		} else {
+			// User explicitly set 0, means never auto-close
+			timeoutMs = 0
+		}
+
+		notifyConfig = &NotifyConfig{
+			Threshold: actualNotifyThreshold,
+			TimeoutMs: timeoutMs,
+			IconPath:  *notifyIcon,
+		}
+	}
+
 	timeout := 30 * time.Second
-	runDaemon(actualInterval, actualOutputFile, timeout, *debug, actualEnableDbus)
+	runDaemon(actualInterval, actualOutputFile, timeout, *debug, actualEnableDbus, notifyConfig)
 }
 
 func runHyprPanelCommand(args []string) {

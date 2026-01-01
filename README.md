@@ -188,6 +188,8 @@ The flake provides a Home Manager module that runs claude-o-meter as a systemd u
 | `enableDbus` | bool | `true` | Enable D-Bus service for external refresh triggers |
 | `enableClaudeCodeHooks` | bool | `false` | Install Claude Code plugin that triggers refresh on conversation end |
 | `claudeCodeSettingsManaged` | bool | `false` | Set to `true` if you use `programs.claude-code.settings` in your config |
+| `notifyThreshold` | int (0-100) or null | `null` | Notify when session usage reaches this percentage |
+| `notifyTimeout` | string or null | `null` | Notification display timeout (e.g., "5s", "0s" for never) |
 
 Example with all options:
 
@@ -197,6 +199,8 @@ services.claude-o-meter = {
   interval = "30s";
   stateFile = "/tmp/claude-usage.json";
   enableClaudeCodeHooks = true;  # Auto-refresh when Claude conversations end
+  notifyThreshold = 80;  # Desktop notification at 80% usage
+  notifyTimeout = "5s";  # Auto-close notification after 5 seconds
   # claudeCodeSettingsManaged = true;  # Set if using programs.claude-code.settings
   # claudeCodePackage = pkgs.claude-code;  # Use your own Claude Code package
   # debug = true;  # Enable to troubleshoot issues
@@ -390,6 +394,47 @@ Create a Claude Code hook that refreshes usage after each request. Add to `~/.cl
 ```
 
 Now your status bar will update immediately after Claude finishes processing a request.
+
+## Desktop Notifications
+
+The daemon can send desktop notifications via D-Bus when your Claude session usage exceeds a threshold. This is useful for getting alerted before you hit your quota limit.
+
+### Enabling Notifications
+
+#### With Home Manager
+
+```nix
+services.claude-o-meter = {
+  enable = true;
+  notifyThreshold = 80;   # Notify at 80% usage
+  notifyTimeout = "5s";   # Auto-close after 5 seconds (optional)
+};
+```
+
+#### Manual
+
+```bash
+claude-o-meter daemon -i 60s -f ~/.cache/claude-o-meter.json \
+  --notify-threshold 80 \
+  --notify-timeout 5s \
+  --notify-icon /path/to/icon.png
+```
+
+When using the Nix package, the Claude icon is automatically included at `$out/share/claude-o-meter/claude-icon.png`.
+
+### Notification Behavior
+
+- **Trigger:** Notification is sent when session usage reaches or exceeds the threshold
+- **One-shot:** Only one notification per threshold crossing (no spam while above threshold)
+- **Reset:** Notification state resets when usage drops below threshold, allowing a new notification on the next crossing
+
+### CLI Options
+
+| Flag | Description |
+|------|-------------|
+| `-t, --notify-threshold` | Percentage (0-100). Notification triggers when session usage >= threshold |
+| `--notify-timeout` | Display timeout (e.g., "5s"). 0 = never auto-close, unset = server default |
+| `--notify-icon` | Path to notification icon (PNG/SVG) |
 
 ### D-Bus Service Details
 

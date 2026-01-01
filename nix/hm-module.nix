@@ -120,6 +120,27 @@ in {
       description =
         "Enable D-Bus service for external refresh triggers (e.g., from Claude Code hooks)";
     };
+
+    notifyThreshold = lib.mkOption {
+      type = lib.types.nullOr (lib.types.ints.between 0 100);
+      default = null;
+      example = 80;
+      description = ''
+        Notify when session usage reaches or exceeds this percentage.
+        Set to null to disable notifications.
+      '';
+    };
+
+    notifyTimeout = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "5s";
+      description = ''
+        Notification display timeout duration (e.g., "5s", "10s").
+        Set to null to let the notification server decide.
+        Set to "0s" for notifications that never auto-close.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
@@ -164,10 +185,16 @@ in {
         Service = {
           Type = "simple";
           ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.stateFile}";
-          ExecStart =
+          ExecStart = let
+            notifyFlags =
+              lib.optionalString (cfg.notifyThreshold != null)
+                " --notify-threshold ${toString cfg.notifyThreshold} --notify-icon ${cfg.package}/share/claude-o-meter/claude-icon.png"
+              + lib.optionalString (cfg.notifyTimeout != null)
+                " --notify-timeout ${cfg.notifyTimeout}";
+          in
             "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${
               lib.optionalString cfg.debug " --debug"
-            }${lib.optionalString cfg.enableDbus " --dbus"}";
+            }${lib.optionalString cfg.enableDbus " --dbus"}${notifyFlags}";
           Restart = "always";
           RestartSec = "10s";
 
@@ -193,13 +220,19 @@ in {
 
     # D-Bus service file for session bus activation
     (lib.mkIf cfg.enableDbus {
-      home.file.".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text =
+      home.file.".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text = let
+        notifyFlags =
+          lib.optionalString (cfg.notifyThreshold != null)
+            " --notify-threshold ${toString cfg.notifyThreshold} --notify-icon ${cfg.package}/share/claude-o-meter/claude-icon.png"
+          + lib.optionalString (cfg.notifyTimeout != null)
+            " --notify-timeout ${cfg.notifyTimeout}";
+      in
         ''
           [D-BUS Service]
           Name=com.github.MartinLoeper.ClaudeOMeter
           Exec=${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${
             lib.optionalString cfg.debug " --debug"
-          } --dbus
+          } --dbus${notifyFlags}
           SystemdService=claude-o-meter.service
         '';
     })
