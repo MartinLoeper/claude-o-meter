@@ -4,10 +4,27 @@
 
 let
   cfg = config.services.claude-o-meter;
+
+  # Build the Claude Code plugin package
+  claudeCodePlugin = import ./claude-code-plugin.nix {
+    inherit pkgs;
+    claudeOMeterPackage = cfg.package;
+  };
 in
 {
   options.services.claude-o-meter = {
     enable = lib.mkEnableOption "claude-o-meter daemon for Claude usage metrics";
+
+    enableClaudeCodeHooks = lib.mkEnableOption ''
+      Claude Code integration via hooks.
+
+      When enabled, installs a Claude Code plugin that automatically triggers
+      a refresh when Claude conversations end. This allows using a longer
+      polling interval (5 minutes instead of 1 minute) since metrics are
+      updated in real-time via the stop hook.
+
+      The plugin is installed to ~/.claude/plugins/claude-o-meter-refresh/
+    '';
 
     package = lib.mkOption {
       type = lib.types.package;
@@ -64,54 +81,80 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    systemd.user.services.claude-o-meter = {
-      Unit = {
-        Description = "Claude usage metrics daemon";
-        After = [ "network.target" ];
-        # Restart service when packages change
-        X-Restart-Triggers = [
-          cfg.package
-          cfg.claudeCodePackage
-        ];
-      };
+  config = lib.mkIf cfg.enable (lib.mkMerge [
+    # Assertions
+    {
+      assertions = [
+        {
+          assertion = cfg.enableClaudeCodeHooks -> cfg.enableDbus;
+          message = ''
+            services.claude-o-meter.enableClaudeCodeHooks requires enableDbus to be true.
+            The Claude Code hook uses 'claude-o-meter refresh' which communicates via D-Bus.
+          '';
+        }
+      ];
+    }
 
-      Service = {
-        Type = "simple";
-        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.stateFile}";
-        ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"}${lib.optionalString cfg.enableDbus " --dbus"}";
-        Restart = "always";
-        RestartSec = "10s";
+    # Base configuration
+    {
+      systemd.user.services.claude-o-meter = {
+        Unit = {
+          Description = "Claude usage metrics daemon";
+          After = [ "network.target" ];
+          # Restart service when packages change
+          X-Restart-Triggers = [
+            cfg.package
+            cfg.claudeCodePackage
+          ];
+        };
 
-        # Ensure the daemon has access to Claude CLI and required tools
-        # - claude-code: the Claude CLI we depend on (configurable via claudeCodePackage option)
-        # - coreutils for mktemp, chmod, dirname, yes (needed by claude wrapper and prompts)
-        # - procps for ps (needed by claude internally)
-        # - bash for command piping
-        # - unbuffer (from expect) for PTY in headless environments
-        # - script (from util-linux) as fallback
-        # TERM is required for PTY to work properly
-        # HOME is needed for claude CLI config access
-        Environment = [
-          "PATH=${cfg.claudeCodePackage}/bin:${pkgs.coreutils}/bin:${pkgs.procps}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
-          "TERM=xterm-256color"
-          "HOME=${config.home.homeDirectory}"
-        ];
-      };
+        Service = {
+          Type = "simple";
+          ExecStartPre = "-${pkgs.coreutils}/bin/rm -f ${cfg.stateFile}";
+          ExecStart = "${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"}${lib.optionalString cfg.enableDbus " --dbus"}";
+          Restart = "always";
+          RestartSec = "10s";
 
-      Install = {
-        WantedBy = [ "default.target" ];
+          # Ensure the daemon has access to Claude CLI and required tools
+          # - claude-code: the Claude CLI we depend on (configurable via claudeCodePackage option)
+          # - coreutils for mktemp, chmod, dirname, yes (needed by claude wrapper and prompts)
+          # - procps for ps (needed by claude internally)
+          # - bash for command piping
+          # - unbuffer (from expect) for PTY in headless environments
+          # - script (from util-linux) as fallback
+          # TERM is required for PTY to work properly
+          # HOME is needed for claude CLI config access
+          Environment = [
+            "PATH=${cfg.claudeCodePackage}/bin:${pkgs.coreutils}/bin:${pkgs.procps}/bin:${pkgs.bash}/bin:${pkgs.expect}/bin:${pkgs.util-linux}/bin:/usr/bin:/bin"
+            "TERM=xterm-256color"
+            "HOME=${config.home.homeDirectory}"
+          ];
+        };
+
+        Install = {
+          WantedBy = [ "default.target" ];
+        };
       };
-    };
+    }
 
     # D-Bus service file for session bus activation
-    home.file = lib.mkIf cfg.enableDbus {
-      ".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text = ''
+    (lib.mkIf cfg.enableDbus {
+      home.file.".local/share/dbus-1/services/com.github.MartinLoeper.ClaudeOMeter.service".text = ''
         [D-BUS Service]
         Name=com.github.MartinLoeper.ClaudeOMeter
         Exec=${cfg.package}/bin/claude-o-meter daemon -i ${cfg.interval} -f ${cfg.stateFile}${lib.optionalString cfg.debug " --debug"} --dbus
         SystemdService=claude-o-meter.service
       '';
-    };
-  };
+    })
+
+    # Claude Code hooks integration
+    (lib.mkIf cfg.enableClaudeCodeHooks {
+      # Override interval default to 5 minutes when hooks are enabled
+      # User can still override this explicitly
+      services.claude-o-meter.interval = lib.mkDefault "5m";
+
+      # Install the Claude Code plugin via symlink
+      home.file.".claude/plugins/claude-o-meter-refresh".source = claudeCodePlugin;
+    })
+  ]);
 }
