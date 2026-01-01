@@ -131,6 +131,20 @@ in
             The Claude Code hook uses 'claude-o-meter refresh' which communicates via D-Bus.
           '';
         }
+        {
+          # If programs.claude-code.settings is configured, claudeCodeSettingsManaged must be true
+          # so we add our marketplace settings via Nix instead of the activation script
+          assertion = let
+            hasClaudeCodeSettings = (config ? programs.claude-code.settings) &&
+                                    (config.programs.claude-code.settings != null) &&
+                                    (config.programs.claude-code.settings != {});
+          in cfg.enableClaudeCodeHooks -> (!hasClaudeCodeSettings || cfg.claudeCodeSettingsManaged);
+          message = ''
+            programs.claude-code.settings is configured in your Home Manager config.
+            Set services.claude-o-meter.claudeCodeSettingsManaged = true to add the
+            marketplace settings via Nix instead of the activation script.
+          '';
+        }
       ];
     }
 
