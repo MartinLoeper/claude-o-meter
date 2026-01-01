@@ -34,11 +34,6 @@ let
     };
   };
 
-  # Check if programs.claude-code.settings is being used (non-empty)
-  # This determines whether to use Nix-managed settings or activation script
-  claudeCodeSettingsManaged =
-    (config ? programs.claude-code.settings) &&
-    (config.programs.claude-code.settings != {});
 in
 {
   options.services.claude-o-meter = {
@@ -54,6 +49,21 @@ in
 
       The marketplace is installed to ~/.claude/claude-o-meter-plugins/
     '';
+
+    claudeCodeSettingsManaged = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether Claude Code settings are managed via Nix (programs.claude-code.settings).
+
+        When true, the marketplace and plugin configuration will be added to
+        programs.claude-code.settings. When false (default), a Home Manager
+        activation script will modify ~/.claude/settings.json directly using jq.
+
+        Set this to true if you use programs.claude-code.settings in your
+        Home Manager configuration.
+      '';
+    };
 
     package = lib.mkOption {
       type = lib.types.package;
@@ -188,7 +198,7 @@ in
 
     # Claude Code settings registration - Nix-managed settings
     # When programs.claude-code.settings is used, add marketplace/plugin config there
-    (lib.mkIf (cfg.enableClaudeCodeHooks && claudeCodeSettingsManaged) {
+    (lib.mkIf (cfg.enableClaudeCodeHooks && cfg.claudeCodeSettingsManaged) {
       programs.claude-code.settings = lib.mkMerge [
         claudeCodeMarketplaceSettings
       ];
@@ -196,7 +206,7 @@ in
 
     # Claude Code settings registration - Activation script fallback
     # When programs.claude-code.settings is NOT used, modify settings.json directly
-    (lib.mkIf (cfg.enableClaudeCodeHooks && !claudeCodeSettingsManaged) {
+    (lib.mkIf (cfg.enableClaudeCodeHooks && !cfg.claudeCodeSettingsManaged) {
       home.activation.claudeOMeterPluginSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         CLAUDE_SETTINGS_DIR="${config.home.homeDirectory}/.claude"
         CLAUDE_SETTINGS_FILE="$CLAUDE_SETTINGS_DIR/settings.json"
