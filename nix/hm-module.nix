@@ -10,6 +10,11 @@ let
     inherit pkgs;
     claudeOMeterPackage = cfg.package;
   };
+
+  # Build the marketplace package containing the plugin
+  claudeCodeMarketplace = import ./claude-code-marketplace.nix {
+    inherit pkgs claudeCodePlugin;
+  };
 in
 {
   options.services.claude-o-meter = {
@@ -18,12 +23,12 @@ in
     enableClaudeCodeHooks = lib.mkEnableOption ''
       Claude Code integration via hooks.
 
-      When enabled, installs a Claude Code plugin that automatically triggers
-      a refresh when Claude conversations end. This allows using a longer
+      When enabled, installs a Claude Code plugin marketplace that automatically
+      triggers a refresh when Claude conversations end. This allows using a longer
       polling interval (5 minutes instead of 1 minute) since metrics are
       updated in real-time via the stop hook.
 
-      The plugin is installed to ~/.claude/plugins/claude-o-meter-refresh/
+      The marketplace is installed to ~/.claude/claude-o-meter-plugins/
     '';
 
     package = lib.mkOption {
@@ -153,8 +158,8 @@ in
       # User can still override this explicitly
       services.claude-o-meter.interval = lib.mkDefault "5m";
 
-      # Install the Claude Code plugin via symlink
-      home.file.".claude/plugins/claude-o-meter-refresh".source = claudeCodePlugin;
+      # Install the Claude Code plugin marketplace via symlink
+      home.file.".claude/claude-o-meter-plugins".source = claudeCodeMarketplace;
     })
   ]);
 }
