@@ -874,17 +874,18 @@ func parseClaudeOutput(rawOutput string, includeRaw bool) *UsageSnapshot {
 	return snapshot
 }
 
-// runQuery executes a single query and returns the snapshot or error
-func runQuery(includeRaw bool, timeout time.Duration, debug bool) (*UsageSnapshot, error) {
+// runQuery executes a single query and returns the snapshot, raw CLI output, and error.
+// The raw output is always returned (even on error) for debugging purposes.
+func runQuery(includeRaw bool, timeout time.Duration, debug bool) (*UsageSnapshot, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	rawOutput, err := executeClaudeCLI(ctx, timeout, debug)
 	if err != nil {
-		return nil, err
+		return nil, rawOutput, err
 	}
 
-	return parseClaudeOutput(rawOutput, includeRaw), nil
+	return parseClaudeOutput(rawOutput, includeRaw), rawOutput, nil
 }
 
 // writeSnapshotToFile atomically writes a snapshot to the given file path
@@ -1058,9 +1059,13 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 	// Run immediately on start
 	doQuery := func() {
-		snapshot, err := runQuery(false, timeout, debug)
+		snapshot, rawOutput, err := runQuery(false, timeout, debug)
 		if err != nil {
 			log.Printf("Query failed: %v", err)
+			// Log raw CLI output for debugging
+			if rawOutput != "" {
+				log.Printf("Raw CLI output:\n%s", stripANSI(rawOutput))
+			}
 			// Write error response to file so consumers know there was an issue
 			errResp := &UsageSnapshot{
 				AccountType: AccountTypeUnknown,
@@ -1251,8 +1256,14 @@ func runQueryCommand(args []string) {
 	debugMode := *debug || *debugLong
 	timeout := 30 * time.Second
 
-	snapshot, err := runQuery(includeRaw, timeout, debugMode)
+	snapshot, rawOutput, err := runQuery(includeRaw, timeout, debugMode)
 	if err != nil {
+		// Print raw CLI output for debugging (mimics --debug behavior on failure)
+		if rawOutput != "" {
+			fmt.Fprintln(os.Stderr, "--- Raw CLI Output ---")
+			fmt.Fprintln(os.Stderr, stripANSI(rawOutput))
+			fmt.Fprintln(os.Stderr, "---")
+		}
 		if *hyprpanelJSON {
 			output := formatHyprPanelError(err.Error())
 			jsonBytes, _ := json.Marshal(output)
