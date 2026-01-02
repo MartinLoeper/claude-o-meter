@@ -317,6 +317,12 @@ Then wait a few seconds for the daemon to fetch new data, and restart HyprPanel 
 systemctl --user restart hyprpanel.service
 ```
 
+## Claude Code Statusline Integration
+
+You can also display claude-o-meter usage metrics directly in Claude Code's built-in statusline. This shows your current usage at the bottom of the terminal during conversations.
+
+See [STATUSLINE.md](STATUSLINE.md) for setup instructions and a [sample script](examples/statusline.sh).
+
 ## How It Works
 
 1. Runs `claude /usage` in a PTY environment via the `script` command
