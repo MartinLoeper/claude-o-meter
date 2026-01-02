@@ -2,6 +2,8 @@
 
 This guide explains how to display Claude usage metrics in Claude Code's statusline using claude-o-meter.
 
+![Claude Code statusline showing usage metrics](assets/claude-code-statusline.png)
+
 ## What is the Claude Code Statusline?
 
 Claude Code supports a customizable statusline that appears at the bottom of the terminal during conversations. You can configure it to show useful information like the current directory, git branch, model name, and—with claude-o-meter—your current usage metrics.
