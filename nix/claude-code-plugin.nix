@@ -3,7 +3,7 @@
 
 let
   pluginName = "claude-o-meter-refresh";
-  version = "1.0.2";
+  version = "1.0.3";
 in pkgs.stdenvNoCC.mkDerivation {
   pname = "claude-o-meter-cc-plugin";
   inherit version;
@@ -35,7 +35,7 @@ in pkgs.stdenvNoCC.mkDerivation {
             "hooks": [
               {
                 "type": "command",
-                "command": "${claudeOMeterPackage}/bin/claude-o-meter refresh",
+                "command": "${claudeOMeterPackage}/bin/claude-o-meter refresh || true",
                 "timeout": 7
               }
             ]
