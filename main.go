@@ -1470,7 +1470,7 @@ func runRefreshCommand(args []string) {
 	conn, err := dbus.SessionBus()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect to session bus: %v\n", err)
-		return // Exit gracefully with code 0 to avoid blocking Claude Code hooks
+		os.Exit(1)
 	}
 	defer conn.Close()
 
@@ -1478,7 +1478,7 @@ func runRefreshCommand(args []string) {
 	call := obj.Call(dbusInterface+".RefreshNow", 0)
 	if call.Err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to call RefreshNow: %v\n", call.Err)
-		return // Exit gracefully with code 0 to avoid blocking Claude Code hooks
+		os.Exit(1)
 	}
 
 	if debugMode {
