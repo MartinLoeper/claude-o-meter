@@ -455,6 +455,16 @@ Specifically, the approach of executing `claude /usage` in a PTY and parsing the
 
 ClaudeBar is a macOS menu bar application that monitors AI coding assistant usage quotas. Check it out if you're on macOS and want a GUI solution!
 
+## Viewing Daemon Logs
+
+When running as a systemd service, any errors or debug output are logged to the journal. To view logs in real-time:
+
+```bash
+journalctl --user -u claude-o-meter -f
+```
+
+When a query fails, the raw CLI output is automatically included in the logs for debugging purposes (no need to enable `--debug`).
+
 ## License
 
 MIT
