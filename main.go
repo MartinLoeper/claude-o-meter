@@ -445,6 +445,22 @@ func formatDuration(seconds int64) string {
 	return strings.Join(parts, " ")
 }
 
+// recalculateTimeRemaining recalculates time remaining from a ResetsAt timestamp
+func recalculateTimeRemaining(resetsAt *string) string {
+	if resetsAt == nil {
+		return "unknown"
+	}
+	resetTime, err := time.Parse(time.RFC3339, *resetsAt)
+	if err != nil {
+		return "unknown"
+	}
+	seconds := int64(time.Until(resetTime).Seconds())
+	if seconds <= 0 {
+		return "0m"
+	}
+	return formatDuration(seconds)
+}
+
 // calculateNextResetRefresh finds the earliest quota reset time and returns
 // a duration for when to schedule the next refresh (60 seconds after reset).
 // Returns nil if no valid reset times are found.
@@ -754,19 +770,15 @@ func formatHyprPanelOutput(snapshot *UsageSnapshot) *HyprPanelOutput {
 
 	// Calculate session usage percentage (used, not remaining)
 	sessionUsed := 100 - snapshot.Quotas[0].PercentRemaining
-	sessionTime := "unknown"
-	if snapshot.Quotas[0].TimeRemainingHuman != "" {
-		sessionTime = snapshot.Quotas[0].TimeRemainingHuman
-	}
+	// Recalculate time remaining from ResetsAt to avoid stale values
+	sessionTime := recalculateTimeRemaining(snapshot.Quotas[0].ResetsAt)
 
 	// Calculate weekly usage if available
 	weeklyUsed := 0.0
 	weeklyTime := "unknown"
 	if len(snapshot.Quotas) > 1 {
 		weeklyUsed = 100 - snapshot.Quotas[1].PercentRemaining
-		if snapshot.Quotas[1].TimeRemainingHuman != "" {
-			weeklyTime = snapshot.Quotas[1].TimeRemainingHuman
-		}
+		weeklyTime = recalculateTimeRemaining(snapshot.Quotas[1].ResetsAt)
 	}
 
 	// Determine level based on session usage
