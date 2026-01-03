@@ -1069,8 +1069,8 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 	// Reset when usage drops below threshold
 	notificationSent := false
 
-	// Track query success for retry interval logic
-	// On failure, retry every 1 minute until success
+	// Track query success for retry behavior.
+	// On failure, retry at a fixed 1-minute interval until success.
 	lastQuerySucceeded := true
 	retryInterval := 1 * time.Minute
 
