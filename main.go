@@ -153,7 +153,7 @@ var (
 	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
 	// Date without year pattern: "Jan 4, 1am" or "Jan 4, 12:59pm"
-	// Hour is restricted to 1-12 to avoid mis-parsing 2-digit years (e.g., "Jan 4, 25" as hour 25)
+	// Hour is restricted to 1-12 to ensure valid 12-hour times and avoid ambiguity with 2-digit year formats
 	dateNoYearPattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(1[0-2]|[1-9])(?::(\d{2}))?(am|pm)\b`)
 
 	// Timezone pattern to extract location
