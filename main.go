@@ -1173,6 +1173,9 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
 				ticker.Reset(interval) // Reset timer after successful manual refresh
+				if !wasSuccessful {
+					log.Printf("Query recovered, resuming normal interval: %s", interval)
+				}
 			} else {
 				// Failed via D-Bus trigger - ensure retry interval is applied/refreshed
 				ticker.Reset(retryInterval)
@@ -1186,6 +1189,9 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
 				ticker.Reset(interval) // Reset regular ticker after successful reset refresh
+				if !wasSuccessful {
+					log.Printf("Query recovered, resuming normal interval: %s", interval)
+				}
 			} else {
 				// Failed via reset trigger - ensure retry interval is applied/refreshed
 				ticker.Reset(retryInterval)
