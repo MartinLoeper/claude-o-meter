@@ -99,8 +99,10 @@ A complete sample statusline script is provided at [`examples/statusline.sh`](ex
 ### Output Example
 
 ```
-📁 ~/projects/myapp  🌿 main  🤖 Claude Opus 4.5  📟 v2.0.76  ⚡ 45% Max
+📁 ~/projects/myapp  🌿 main  🤖 Claude Opus 4.5  📟 v2.0.76  ⚡ 45% Max (2h 30m)
 ```
+
+The time in parentheses shows how long until the session quota resets.
 
 ## Customization
 

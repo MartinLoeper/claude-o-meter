@@ -73,6 +73,7 @@ fi
 # ---- claude-o-meter integration ----
 meter_text=""
 meter_class=""
+meter_time_left=""
 METER_FILE="$HOME/.cache/claude-o-meter.json"
 if [ -f "$METER_FILE" ] && command -v claude-o-meter >/dev/null 2>&1; then
   meter_json=$(claude-o-meter hyprpanel -f "$METER_FILE" 2>/dev/null)
@@ -80,9 +81,15 @@ if [ -f "$METER_FILE" ] && command -v claude-o-meter >/dev/null 2>&1; then
     if [ "$HAS_JQ" -eq 1 ]; then
       meter_text=$(echo "$meter_json" | jq -r '.text // ""' 2>/dev/null)
       meter_class=$(echo "$meter_json" | jq -r '.class // ""' 2>/dev/null)
+      meter_tooltip=$(echo "$meter_json" | jq -r '.tooltip // ""' 2>/dev/null)
+      # Extract session time left from tooltip (e.g., "Session: 34% used (11m left)" -> "11m")
+      meter_time_left=$(echo "$meter_tooltip" | grep -o 'Session:.*(\([^)]*\) left)' | sed 's/.*(\([^)]*\) left).*/\1/')
     else
       meter_text=$(echo "$meter_json" | grep -o '"text"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
       meter_class=$(echo "$meter_json" | grep -o '"class"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"class"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+      # Extract tooltip and parse time left (bash fallback)
+      meter_tooltip=$(echo "$meter_json" | grep -o '"tooltip"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"tooltip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+      meter_time_left=$(echo "$meter_tooltip" | grep -o 'Session:.*(\([^)]*\) left)' | sed 's/.*(\([^)]*\) left).*/\1/')
     fi
   fi
 fi
@@ -107,7 +114,11 @@ if [ -n "$meter_text" ]; then
     high)   meter_color="$(meter_high_color)" ;;
     *)      meter_color="" ;;
   esac
-  printf '  ⚡ %s%s%s' "$meter_color" "$meter_text" "$(rst)"
+  if [ -n "$meter_time_left" ]; then
+    printf '  ⚡ %s%s (%s)%s' "$meter_color" "$meter_text" "$meter_time_left" "$(rst)"
+  else
+    printf '  ⚡ %s%s%s' "$meter_color" "$meter_text" "$(rst)"
+  fi
 fi
 
 printf '\n'
