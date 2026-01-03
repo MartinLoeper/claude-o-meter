@@ -153,7 +153,8 @@ var (
 	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
 	// Date without year pattern: "Jan 4, 1am" or "Jan 4, 12:59pm"
-	dateNoYearPattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
+	// Hour is restricted to 1-12 to avoid mis-parsing 2-digit years (e.g., "Jan 4, 25" as hour 25)
+	dateNoYearPattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(1[0-2]|[1-9])(?::(\d{2}))?(am|pm)\b`)
 
 	// Timezone pattern to extract location
 	timezonePattern = regexp.MustCompile(`\(([^)]+)\)`)
@@ -353,7 +354,9 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 		month := monthMap[strings.ToLower(matches[1])]
 		day, _ := strconv.Atoi(matches[2])
 		hour, _ := strconv.Atoi(matches[3])
-		min, _ := strconv.Atoi(matches[4]) // Will be 0 if minutes not specified
+		// strconv.Atoi("") returns (0, err) - we intentionally ignore the error
+		// since missing minutes should default to 0
+		min, _ := strconv.Atoi(matches[4])
 		ampm := strings.ToLower(matches[5])
 
 		// Convert to 24-hour format
@@ -364,6 +367,8 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 		}
 
 		// Assume current year first
+		// Note: time.Date normalizes invalid dates (e.g., Feb 30 → Mar 2).
+		// We rely on Claude CLI producing valid dates; no explicit validation added.
 		year := now.Year()
 		resetTime := time.Date(year, month, day, hour, min, 0, 0, loc)
 
