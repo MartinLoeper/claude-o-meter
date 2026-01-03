@@ -1173,10 +1173,12 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
 				ticker.Reset(interval) // Reset timer after successful manual refresh
-			} else if wasSuccessful {
-				// Just failed via D-Bus trigger - switch to retry interval
+			} else {
+				// Failed via D-Bus trigger - ensure retry interval is applied/refreshed
 				ticker.Reset(retryInterval)
-				log.Printf("Switching to retry interval: %s", retryInterval)
+				if wasSuccessful {
+					log.Printf("Switching to retry interval: %s", retryInterval)
+				}
 			}
 		case <-resetTimerChan:
 			log.Printf("Quota reset timer fired, refreshing...")
@@ -1184,10 +1186,12 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
 				ticker.Reset(interval) // Reset regular ticker after successful reset refresh
-			} else if wasSuccessful {
-				// Just failed via reset trigger - switch to retry interval
+			} else {
+				// Failed via reset trigger - ensure retry interval is applied/refreshed
 				ticker.Reset(retryInterval)
-				log.Printf("Switching to retry interval: %s", retryInterval)
+				if wasSuccessful {
+					log.Printf("Switching to retry interval: %s", retryInterval)
+				}
 			}
 		case sig := <-sigChan:
 			log.Printf("Received signal %v, shutting down...", sig)
