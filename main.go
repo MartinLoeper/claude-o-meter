@@ -715,7 +715,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
 			}
-			return "", fmt.Errorf("command timed out after %v", timeout)
+			return output, fmt.Errorf("command timed out after %v", timeout)
 
 		case err := <-done:
 			// Command finished on its own
@@ -1069,8 +1069,13 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 	// Reset when usage drops below threshold
 	notificationSent := false
 
+	// Track query success for retry interval logic
+	// On failure, retry every 1 minute until success
+	lastQuerySucceeded := true
+	retryInterval := 1 * time.Minute
+
 	// Run immediately on start
-	doQuery := func() {
+	doQuery := func() bool {
 		snapshot, rawOutput, err := runQuery(false, timeout, debug)
 		if err != nil {
 			log.Printf("Query failed: %v", err)
@@ -1086,7 +1091,7 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			if writeErr := writeSnapshotToFile(errResp, outputFile); writeErr != nil {
 				log.Printf("Failed to write error state: %v", writeErr)
 			}
-			return
+			return false
 		}
 
 		// Check for authentication errors
@@ -1096,7 +1101,7 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 		if err := writeSnapshotToFile(snapshot, outputFile); err != nil {
 			log.Printf("Failed to write snapshot: %v", err)
-			return
+			return false
 		}
 
 		if snapshot.AuthError != nil {
@@ -1139,22 +1144,51 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 		// Schedule next reset-based refresh
 		scheduleResetRefresh(snapshot.Quotas)
+		return true
 	}
 
-	doQuery()
+	lastQuerySucceeded = doQuery()
+	if !lastQuerySucceeded {
+		ticker.Reset(retryInterval)
+		log.Printf("Initial query failed, retrying in %s", retryInterval)
+	}
 
 	for {
 		select {
 		case <-ticker.C:
-			doQuery()
+			wasSuccessful := lastQuerySucceeded
+			lastQuerySucceeded = doQuery()
+			if !lastQuerySucceeded && wasSuccessful {
+				// Just failed - switch to retry interval
+				ticker.Reset(retryInterval)
+				log.Printf("Switching to retry interval: %s", retryInterval)
+			} else if lastQuerySucceeded && !wasSuccessful {
+				// Just recovered - switch back to normal interval
+				ticker.Reset(interval)
+				log.Printf("Query recovered, resuming normal interval: %s", interval)
+			}
 		case <-refreshChan:
 			log.Printf("D-Bus refresh requested")
-			doQuery()
-			ticker.Reset(interval) // Reset timer after manual refresh
+			wasSuccessful := lastQuerySucceeded
+			lastQuerySucceeded = doQuery()
+			if lastQuerySucceeded {
+				ticker.Reset(interval) // Reset timer after successful manual refresh
+			} else if wasSuccessful {
+				// Just failed via D-Bus trigger - switch to retry interval
+				ticker.Reset(retryInterval)
+				log.Printf("Switching to retry interval: %s", retryInterval)
+			}
 		case <-resetTimerChan:
 			log.Printf("Quota reset timer fired, refreshing...")
-			doQuery()
-			ticker.Reset(interval) // Reset regular ticker after reset refresh
+			wasSuccessful := lastQuerySucceeded
+			lastQuerySucceeded = doQuery()
+			if lastQuerySucceeded {
+				ticker.Reset(interval) // Reset regular ticker after successful reset refresh
+			} else if wasSuccessful {
+				// Just failed via reset trigger - switch to retry interval
+				ticker.Reset(retryInterval)
+				log.Printf("Switching to retry interval: %s", retryInterval)
+			}
 		case sig := <-sigChan:
 			log.Printf("Received signal %v, shutting down...", sig)
 			if resetTimer != nil {
