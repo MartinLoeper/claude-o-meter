@@ -152,6 +152,10 @@ var (
 	// Full date pattern: "Jan 4, 2026, 12:59am" or "Jan 4, 2026, 1am"
 	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
+	// Date without year pattern: "Jan 4, 1am" or "Jan 4, 12:59pm"
+	// Hour is restricted to 1-12 to ensure valid 12-hour times and avoid ambiguity with 2-digit year formats
+	dateNoYearPattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(1[0-2]|[1-9])(?::(\d{2}))?(am|pm)\b`)
+
 	// Timezone pattern to extract location
 	timezonePattern = regexp.MustCompile(`\(([^)]+)\)`)
 
@@ -338,6 +342,41 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 		}
 
 		resetTime := time.Date(year, month, day, hour, min, 0, 0, loc)
+		duration := int64(resetTime.Sub(now).Seconds())
+		if duration > 0 {
+			return &resetTime, &duration
+		}
+		return &resetTime, nil
+	}
+
+	// Try date without year pattern: "Jan 4, 1am" or "Jan 4, 12:59pm"
+	if matches := dateNoYearPattern.FindStringSubmatch(text); len(matches) > 5 {
+		month := monthMap[strings.ToLower(matches[1])]
+		day, _ := strconv.Atoi(matches[2])
+		hour, _ := strconv.Atoi(matches[3])
+		// strconv.Atoi("") returns (0, err) - we intentionally ignore the error
+		// since missing minutes should default to 0
+		min, _ := strconv.Atoi(matches[4])
+		ampm := strings.ToLower(matches[5])
+
+		// Convert to 24-hour format
+		if ampm == "pm" && hour != 12 {
+			hour += 12
+		} else if ampm == "am" && hour == 12 {
+			hour = 0
+		}
+
+		// Assume current year first
+		// Note: time.Date normalizes invalid dates (e.g., Feb 30 → Mar 2).
+		// We rely on Claude CLI producing valid dates; no explicit validation added.
+		year := now.Year()
+		resetTime := time.Date(year, month, day, hour, min, 0, 0, loc)
+
+		// If the time is in the past, assume next year (we never go back in time)
+		if resetTime.Before(now) {
+			resetTime = time.Date(year+1, month, day, hour, min, 0, 0, loc)
+		}
+
 		duration := int64(resetTime.Sub(now).Seconds())
 		if duration > 0 {
 			return &resetTime, &duration
