@@ -321,6 +321,62 @@ Users can override this with the `interval` option if needed.
 
 ---
 
+## Daemon Retry Behavior
+
+The daemon implements a two-phase retry strategy to handle different failure scenarios:
+
+### Startup Mode (Network Unavailable at Boot)
+
+When the daemon starts before the network is available (common with systemd services at boot), it enters **startup mode** with aggressive 5-second retries:
+
+```mermaid
+stateDiagram-v2
+    [*] --> StartupMode: daemon starts
+    StartupMode --> StartupMode: query fails (5s retry)
+    StartupMode --> NormalMode: query succeeds
+
+    state StartupMode {
+        [*] --> InitialQuery
+        InitialQuery --> RetryIn5s: failure
+        RetryIn5s --> InitialQuery: 5s elapsed
+        InitialQuery --> Exit: success
+    }
+```
+
+### Normal Operation
+
+After the first successful query, the daemon switches to **normal mode**:
+
+| State | Retry Interval | Description |
+|-------|---------------|-------------|
+| Success | Normal interval (60s/5m) | Regular polling continues |
+| First failure | 1 minute | Switches to retry mode |
+| Continuing failure | 1 minute | Maintains retry interval |
+| Recovery | Normal interval | Resumes normal polling |
+
+```mermaid
+stateDiagram-v2
+    [*] --> Success: startup complete
+    Success --> Success: query succeeds
+    Success --> Failure: query fails
+    Failure --> Failure: query fails (1m retry)
+    Failure --> Success: query succeeds
+```
+
+### Retry Intervals Summary
+
+| Phase | Condition | Interval |
+|-------|-----------|----------|
+| Startup | Before first success | 5 seconds |
+| Normal | Successful queries | 60s (polling) or 5m (with hooks) |
+| Retry | After failure in normal mode | 1 minute |
+
+This ensures:
+- **Fast recovery at boot**: When the network becomes available, the daemon recovers within 5 seconds
+- **Reasonable retry in normal operation**: Transient failures don't cause excessive load
+
+---
+
 ## Edge Cases
 
 ### Cache File Missing (First Startup)
