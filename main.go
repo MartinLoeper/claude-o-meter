@@ -415,8 +415,28 @@ func parseAbsoluteTime(text string) (*time.Time, *int64) {
 	return nil, nil
 }
 
+// quotaSectionMarkers are keywords that indicate the start of a new quota section.
+// Used to bound reset time searches to prevent matching reset times from other quotas.
+var quotaSectionMarkers = []string{
+	"current session",
+	"current week",
+	"opus usage",
+	"sonnet usage",
+}
+
+// isQuotaSectionMarker checks if a lowercased line contains a quota section marker.
+// The input should already be lowercase for efficiency.
+func isQuotaSectionMarker(lineLower string) bool {
+	for _, marker := range quotaSectionMarkers {
+		if strings.Contains(lineLower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
-	// Look within next 14 lines for reset information
+	// Look within next 14 lines for reset information, but stop if we hit another quota section
 	endIdx := startIdx + 14
 	if endIdx > len(lines) {
 		endIdx = len(lines)
@@ -424,6 +444,12 @@ func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
 
 	for i := startIdx; i < endIdx; i++ {
 		line := strings.ToLower(lines[i])
+
+		// Stop searching if we encounter another quota section marker (but not on the start line)
+		if i > startIdx && isQuotaSectionMarker(line) {
+			break
+		}
+
 		if strings.Contains(line, "reset") || strings.Contains(line, "renew") {
 			// First try parsing relative duration components
 			var totalSeconds int64
