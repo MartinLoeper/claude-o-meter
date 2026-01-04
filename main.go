@@ -1101,8 +1101,8 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 		if err := writeSnapshotToFile(snapshot, outputFile); err != nil {
 			log.Printf("Failed to write snapshot: %v", err)
-			// Query succeeded, only file write failed - don't trigger retry interval
-			return true
+			// File write failed - trigger retry interval since output file wasn't updated
+			return false
 		}
 
 		if snapshot.AuthError != nil {
