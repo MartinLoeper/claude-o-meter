@@ -8,6 +8,8 @@ A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `
 
 ![Desktop notification showing usage threshold alert](assets/notification.png)
 
+<sub>*Coming soon: eww widget with Home Manager module — toggle detailed usage info via Hyprland shortcut*</sub>
+
 ## Why?
 
 Anthropic doesn't provide a public API for querying Claude usage metrics. The author was annoyed by not being able to display Claude usage in [HyprPanel](https://hyprpanel.com/) (a status bar for Hyprland). This tool solves that by scraping the metrics from the Claude CLI and outputting them as JSON, making it easy to integrate with status bars, scripts, and other tools.
