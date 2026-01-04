@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 )
 
 func TestDetectAuthError(t *testing.T) {
@@ -377,6 +376,3 @@ func TestParseQuotas_SessionResetNotMatchedFromWeekly(t *testing.T) {
 		}
 	}
 }
-
-// Suppress unused import warning for time package
-var _ = time.Now
