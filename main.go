@@ -424,9 +424,9 @@ var quotaSectionMarkers = []string{
 	"sonnet usage",
 }
 
-// isQuotaSectionMarker checks if a line contains a quota section marker
-func isQuotaSectionMarker(line string) bool {
-	lineLower := strings.ToLower(line)
+// isQuotaSectionMarker checks if a lowercased line contains a quota section marker.
+// The input should already be lowercase for efficiency.
+func isQuotaSectionMarker(lineLower string) bool {
 	for _, marker := range quotaSectionMarkers {
 		if strings.Contains(lineLower, marker) {
 			return true
@@ -446,7 +446,7 @@ func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
 		line := strings.ToLower(lines[i])
 
 		// Stop searching if we encounter another quota section marker (but not on the start line)
-		if i > startIdx && isQuotaSectionMarker(lines[i]) {
+		if i > startIdx && isQuotaSectionMarker(line) {
 			break
 		}
 

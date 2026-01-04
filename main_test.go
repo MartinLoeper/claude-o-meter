@@ -200,6 +200,7 @@ func TestFormatHyprPanelAuthError(t *testing.T) {
 }
 
 func TestIsQuotaSectionMarker(t *testing.T) {
+	// Note: isQuotaSectionMarker expects pre-lowercased input for efficiency
 	tests := []struct {
 		name string
 		line string
@@ -207,32 +208,32 @@ func TestIsQuotaSectionMarker(t *testing.T) {
 	}{
 		{
 			name: "current session marker",
-			line: "Current session",
+			line: "current session",
 			want: true,
 		},
 		{
 			name: "current week all models",
-			line: "Current week (all models)",
+			line: "current week (all models)",
 			want: true,
 		},
 		{
 			name: "current week opus",
-			line: "Current week (opus)",
+			line: "current week (opus)",
 			want: true,
 		},
 		{
 			name: "opus usage",
-			line: "Opus usage",
+			line: "opus usage",
 			want: true,
 		},
 		{
 			name: "sonnet usage",
-			line: "Sonnet usage",
+			line: "sonnet usage",
 			want: true,
 		},
 		{
 			name: "reset line - not a marker",
-			line: "Resets 5d 3h",
+			line: "resets 5d 3h",
 			want: false,
 		},
 		{
