@@ -1110,8 +1110,12 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 	// Track query success for retry behavior.
 	// On failure, retry at a fixed 1-minute interval until success.
+	// During startup (before first successful query), use faster 5s retries
+	// to recover quickly when network becomes available.
 	lastQuerySucceeded := true
 	retryInterval := 1 * time.Minute
+	startupMode := true
+	startupRetryInterval := 5 * time.Second
 
 	// Run immediately on start
 	doQuery := func() bool {
@@ -1189,8 +1193,10 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 
 	lastQuerySucceeded = doQuery()
 	if !lastQuerySucceeded {
-		ticker.Reset(retryInterval)
-		log.Printf("Initial query failed, retrying in %s", retryInterval)
+		ticker.Reset(startupRetryInterval)
+		log.Printf("Initial query failed (startup mode), retrying in %s", startupRetryInterval)
+	} else {
+		startupMode = false
 	}
 
 	for {
@@ -1198,29 +1204,48 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 		case <-ticker.C:
 			wasSuccessful := lastQuerySucceeded
 			lastQuerySucceeded = doQuery()
-			if !lastQuerySucceeded && wasSuccessful {
-				// Just failed - switch to retry interval
-				ticker.Reset(retryInterval)
-				log.Printf("Switching to retry interval: %s", retryInterval)
-			} else if lastQuerySucceeded && !wasSuccessful {
-				// Just recovered - switch back to normal interval
-				ticker.Reset(interval)
-				log.Printf("Query recovered, resuming normal interval: %s", interval)
+			if lastQuerySucceeded {
+				if startupMode {
+					startupMode = false
+					ticker.Reset(interval)
+					log.Printf("Startup completed, switching to normal polling interval: %s", interval)
+				} else if !wasSuccessful {
+					// Recovered from failure during normal operation
+					ticker.Reset(interval)
+					log.Printf("Query recovered, resuming normal interval: %s", interval)
+				}
+			} else {
+				if startupMode {
+					ticker.Reset(startupRetryInterval)
+					log.Printf("Startup query failed, retrying in %s", startupRetryInterval)
+				} else if wasSuccessful {
+					// Just failed during normal operation
+					ticker.Reset(retryInterval)
+					log.Printf("Switching to retry interval: %s", retryInterval)
+				}
 			}
 		case <-refreshChan:
 			log.Printf("D-Bus refresh requested")
 			wasSuccessful := lastQuerySucceeded
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
+				if startupMode {
+					startupMode = false
+					log.Printf("Startup completed via D-Bus refresh")
+				}
 				ticker.Reset(interval) // Reset timer after successful manual refresh
 				if !wasSuccessful {
 					log.Printf("Query recovered, resuming normal interval: %s", interval)
 				}
 			} else {
-				// Failed via D-Bus trigger - ensure retry interval is applied/refreshed
-				ticker.Reset(retryInterval)
-				if wasSuccessful {
-					log.Printf("Switching to retry interval: %s", retryInterval)
+				// Failed via D-Bus trigger - use appropriate retry interval
+				if startupMode {
+					ticker.Reset(startupRetryInterval)
+				} else {
+					ticker.Reset(retryInterval)
+					if wasSuccessful {
+						log.Printf("Switching to retry interval: %s", retryInterval)
+					}
 				}
 			}
 		case <-resetTimerChan:
@@ -1228,15 +1253,23 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 			wasSuccessful := lastQuerySucceeded
 			lastQuerySucceeded = doQuery()
 			if lastQuerySucceeded {
+				if startupMode {
+					startupMode = false
+					log.Printf("Startup completed via reset timer refresh")
+				}
 				ticker.Reset(interval) // Reset regular ticker after successful reset refresh
 				if !wasSuccessful {
 					log.Printf("Query recovered, resuming normal interval: %s", interval)
 				}
 			} else {
-				// Failed via reset trigger - ensure retry interval is applied/refreshed
-				ticker.Reset(retryInterval)
-				if wasSuccessful {
-					log.Printf("Switching to retry interval: %s", retryInterval)
+				// Failed via reset trigger - use appropriate retry interval
+				if startupMode {
+					ticker.Reset(startupRetryInterval)
+				} else {
+					ticker.Reset(retryInterval)
+					if wasSuccessful {
+						log.Printf("Switching to retry interval: %s", retryInterval)
+					}
 				}
 			}
 		case sig := <-sigChan:
