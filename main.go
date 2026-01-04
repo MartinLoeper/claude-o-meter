@@ -1196,6 +1196,7 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 		ticker.Reset(startupRetryInterval)
 		log.Printf("Initial query failed (startup mode), retrying in %s", startupRetryInterval)
 	} else {
+		ticker.Reset(interval)
 		startupMode = false
 	}
 
@@ -1222,6 +1223,9 @@ func runDaemon(interval time.Duration, outputFile string, timeout time.Duration,
 					// Just failed during normal operation
 					ticker.Reset(retryInterval)
 					log.Printf("Switching to retry interval: %s", retryInterval)
+				} else {
+					// Continuing failure during normal operation
+					ticker.Reset(retryInterval)
 				}
 			}
 		case <-refreshChan:
