@@ -177,7 +177,8 @@ in {
       systemd.user.services.claude-o-meter = {
         Unit = {
           Description = "Claude usage metrics daemon";
-          After = [ "network.target" ];
+          After = [ "network-online.target" ];
+          Wants = [ "network-online.target" ];
           # Restart service when packages change
           X-Restart-Triggers = [ cfg.package cfg.claudeCodePackage ];
         };
