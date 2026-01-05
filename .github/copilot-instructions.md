@@ -1,5 +1,15 @@
 # Copilot Instructions
 
+## Interaction Guidelines
+
+When mentioned in comments (e.g., "@copilot what do you think?"), provide feedback, opinions, or code review suggestions **without creating code changes or new commits** unless explicitly requested. This project primarily uses Copilot for advisory purposes and code reviews, not automatic code generation.
+
+Only create code changes when:
+- Explicitly asked to implement something (e.g., "implement X", "add Y", "fix Z")
+- Responding to actionable feedback that requires code modifications
+
+When providing advisory responses, reply directly to the comment without using `report_progress` or creating commits.
+
 ## Code Review Guidelines
 
 ### Previous Review Comments
