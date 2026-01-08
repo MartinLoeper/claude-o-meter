@@ -31,6 +31,7 @@ claude-o-meter scrapes output from the Claude CLI, so it depends on specific Cla
 
 | claude-o-meter | Claude Code | Status    |
 |----------------|-------------|-----------|
+| 2.1.1-X        | 2.1.0, 2.1.1 | Tested :white_check_mark: |
 | 2.0.76-X       | 2.0.76      | Tested :white_check_mark: |
 
 When using the Home Manager module, the correct Claude Code version is automatically included as a dependency via [claude-code-nix](https://github.com/sadjow/claude-code-nix).
@@ -77,6 +78,7 @@ go build -o claude-o-meter .
 ## Requirements
 
 - The [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) must be installed and authenticated
+  - Supports both `claude` and `claude-bun` binaries (auto-detected)
 - Linux/macOS (uses `script` command for PTY)
 
 ## Usage

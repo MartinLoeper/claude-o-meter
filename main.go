@@ -134,9 +134,11 @@ var (
 	ansiPattern = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 	// Account type patterns (case insensitive)
-	proPattern = regexp.MustCompile(`(?i)·\s*claude\s+pro`)
-	maxPattern = regexp.MustCompile(`(?i)·\s*claude\s+max`)
-	apiPattern = regexp.MustCompile(`(?i)·\s*claude\s+api`)
+	// v2.1.x format: "Claude Max" without leading ·
+	// v2.0.x format: "· claude max" with leading ·
+	proPattern = regexp.MustCompile(`(?i)(?:·\s*)?claude\s+pro`)
+	maxPattern = regexp.MustCompile(`(?i)(?:·\s*)?claude\s+max`)
+	apiPattern = regexp.MustCompile(`(?i)(?:·\s*)?claude\s+api`)
 
 	// Percentage pattern: "X% used" or "X% left"
 	percentPattern = regexp.MustCompile(`(\d{1,3})\s*%\s*(used|left)`)
@@ -557,12 +559,14 @@ func parseQuotas(text string) []Quota {
 		qType QuotaType
 		model string
 	}{
-		"current session":           {QuotaTypeSession, ""},
-		"current week (all models)": {QuotaTypeWeekly, ""},
-		"current week (opus)":       {QuotaTypeModelSpecific, "opus"},
-		"current week (sonnet)":     {QuotaTypeModelSpecific, "sonnet"},
-		"opus usage":                {QuotaTypeModelSpecific, "opus"},
-		"sonnet usage":              {QuotaTypeModelSpecific, "sonnet"},
+		"current session":            {QuotaTypeSession, ""},
+		"current week (all models)":  {QuotaTypeWeekly, ""},
+		"current week (opus)":        {QuotaTypeModelSpecific, "opus"},
+		"current week (sonnet)":      {QuotaTypeModelSpecific, "sonnet"},
+		"current week (opus only)":   {QuotaTypeModelSpecific, "opus"},   // v2.1.x format
+		"current week (sonnet only)": {QuotaTypeModelSpecific, "sonnet"}, // v2.1.x format
+		"opus usage":                 {QuotaTypeModelSpecific, "opus"},
+		"sonnet usage":               {QuotaTypeModelSpecific, "sonnet"},
 	}
 
 	for i, line := range lines {
@@ -717,10 +721,30 @@ func parseCostUsage(text string) *CostUsage {
 	return nil
 }
 
+// findClaudeBinary returns the path to the claude CLI binary.
+// It tries "claude" first, then falls back to "claude-bun" (NixOS alias).
+func findClaudeBinary() (string, error) {
+	// Try "claude" first (standard installation)
+	if path, err := exec.LookPath("claude"); err == nil {
+		return path, nil
+	}
+	// Fall back to "claude-bun" (NixOS/bun-based installation)
+	if path, err := exec.LookPath("claude-bun"); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf("claude CLI not found: tried 'claude' and 'claude-bun'")
+}
+
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
+	// Find the claude binary
+	claudeBin, err := findClaudeBinary()
+	if err != nil {
+		return "", err
+	}
+
 	// Run claude from /tmp to avoid permission prompts for home directory
 	// Use script command for PTY
-	cmd := exec.CommandContext(ctx, "script", "-q", "-c", "claude /usage", "/dev/null")
+	cmd := exec.CommandContext(ctx, "script", "-q", "-c", claudeBin+" /usage", "/dev/null")
 	cmd.Dir = "/tmp"
 
 	var stdout bytes.Buffer
