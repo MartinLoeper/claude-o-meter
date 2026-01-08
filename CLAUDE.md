@@ -60,6 +60,13 @@ Version is stored in the `VERSION` file. See `VERSIONING.md` for the full scheme
 - Always update the `VERSION` file BEFORE creating a git tag. The tag must match the VERSION file contents.
 - Only bump the version after meaningful changes to Nix sources (`flake.nix`, `nix/`) or Go sources (`*.go`). Documentation-only changes do not require a version bump.
 
+**Version Synchronization:**
+
+When bumping the VERSION file, also update the `claude-code-nix` input version in `flake.nix` if the base version changes:
+- VERSION `2.1.1-1` → flake.nix ref `v2.1.1`
+- VERSION `2.2.0-1` → flake.nix ref `v2.2.0`
+- Subversion-only bumps (`2.1.1-1` → `2.1.1-2`) do NOT require flake.nix updates
+
 ## Testing
 
 This project currently has no tests. The codebase is a single `main.go` file.
