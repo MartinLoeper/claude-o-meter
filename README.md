@@ -10,11 +10,6 @@ A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `
 
 <sub>*Coming soon: eww widget with Home Manager module — toggle detailed usage info via Hyprland shortcut*</sub>
 
-## Important Note: Usage Command Completely Broken
-
-The `/usage` command is generally broken at the moment in Claude Code, see: https://github.com/anthropics/claude-code/issues/16711   
-We are patiently waiting for them to fix it.
-
 ## Why?
 
 Anthropic doesn't provide a public API for querying Claude usage metrics. The author was annoyed by not being able to display Claude usage in [HyprPanel](https://hyprpanel.com/) (a status bar for Hyprland). This tool solves that by scraping the metrics from the Claude CLI and outputting them as JSON, making it easy to integrate with status bars, scripts, and other tools.
