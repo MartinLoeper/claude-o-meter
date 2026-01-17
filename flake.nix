@@ -24,7 +24,7 @@
 
             src = ./.;
 
-            vendorHash = "sha256-7tiSwNhq6e4LEh4lUkfh2i4tEdWWL6TxQpYYwYKsfog=";
+            vendorHash = "sha256-NrU2dSnUQzWpc33BsjUCzesYsiEcMsdM3x3OJhpdVUs=";
 
             nativeBuildInputs = with pkgs; [
               pkg-config
