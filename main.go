@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -15,9 +14,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 )
@@ -748,6 +749,17 @@ func findClaudeBinary() (string, error) {
 	return "", fmt.Errorf("claude CLI not found: tried 'claude' and 'claude-bun'")
 }
 
+// killProcessTree kills a process and all its descendants by process group.
+func killProcessTree(pid int) {
+	pgid, err := syscall.Getpgid(pid)
+	if err != nil {
+		return // Process may have already exited
+	}
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		log.Printf("failed to kill process group %d for pid %d: %v", pgid, pid, err)
+	}
+}
+
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
 	// Find the claude binary
 	claudeBin, err := findClaudeBinary()
@@ -755,32 +767,58 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 		return "", err
 	}
 
-	// Run claude from /tmp to avoid permission prompts for home directory
-	// Use script command for PTY
-	cmd := exec.CommandContext(ctx, "script", "-q", "-c", claudeBin+" /usage", "/dev/null")
+	// Run claude directly with PTY (no script wrapper)
+	// This ensures bun is a direct child that can be reliably killed
+	cmd := exec.Command(claudeBin, "/usage")
 	cmd.Dir = "/tmp"
-
-	var stdout bytes.Buffer
-	if debug {
-		// In debug mode, tee output to stderr so we can see it in real-time
-		cmd.Stdout = io.MultiWriter(&stdout, os.Stderr)
-		cmd.Stderr = io.MultiWriter(&stdout, os.Stderr)
-	} else {
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stdout // Capture stderr to ensure consistent PTY behavior
-	}
 
 	// Set environment to ensure PTY works without a controlling terminal
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	// Create a new session so script works without a controlling terminal,
-	// and set process group so we can kill all children on timeout
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Stdin = nil
+	// Use Setpgid instead of Setsid so we can reliably kill the entire process group
+	// Pgid: 0 means the child becomes its own process group leader
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
 
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start claude CLI: %w", err)
+	// Start the command with a PTY
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to start claude CLI with PTY: %w", err)
+	}
+	defer ptmx.Close()
+
+	// Buffer to capture output
+	var stdout bytes.Buffer
+	var outputMu sync.Mutex
+
+	// Channel to signal when the reader goroutine is done
+	readerDone := make(chan struct{})
+
+	// Read from PTY in a goroutine
+	go func() {
+		defer close(readerDone)
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				outputMu.Lock()
+				stdout.Write(buf[:n])
+				if debug {
+					os.Stderr.Write(buf[:n])
+				}
+				outputMu.Unlock()
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// Helper to wait for reader to finish (with timeout) after killing process
+	waitForReader := func() {
+		select {
+		case <-readerDone:
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 
 	// Create a channel to signal completion
@@ -805,23 +843,33 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 		return detectAuthError(cleanOutput) != nil
 	}
 
+	// Helper to get current output safely
+	getOutput := func() string {
+		outputMu.Lock()
+		defer outputMu.Unlock()
+		return stdout.String()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			// Kill the entire process group to ensure script and its children die
+			// Kill the entire process tree
 			if cmd.Process != nil {
-				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				killProcessTree(cmd.Process.Pid)
 			}
+			// Wait for reader to finish capturing any remaining buffered data
+			waitForReader()
 			// Check if we got data before timing out
-			output := stdout.String()
+			output := getOutput()
 			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
 			}
 			return output, fmt.Errorf("command timed out after %v", timeout)
 
 		case err := <-done:
-			// Command finished on its own
-			output := stdout.String()
+			// Command finished on its own - wait for reader to capture remaining data
+			waitForReader()
+			output := getOutput()
 			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
 			}
@@ -832,23 +880,25 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 
 		case <-ticker.C:
 			// Check if we have usage data or auth error yet
-			output := stdout.String()
+			output := getOutput()
 			if hasUsageData(output) {
-				// Give it a moment to finish rendering, then kill the process group
+				// Give it a moment to finish rendering, then kill the process tree
 				time.Sleep(300 * time.Millisecond)
 				if cmd.Process != nil {
-					syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+					killProcessTree(cmd.Process.Pid)
 				}
-				return stdout.String(), nil
+				waitForReader()
+				return getOutput(), nil
 			}
 			// Also check for auth errors - no point waiting for usage data if not logged in
 			if hasAuthError(output) {
 				// Give it a moment to capture the full error message
 				time.Sleep(300 * time.Millisecond)
 				if cmd.Process != nil {
-					syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+					killProcessTree(cmd.Process.Pid)
 				}
-				return stdout.String(), nil
+				waitForReader()
+				return getOutput(), nil
 			}
 		}
 	}
