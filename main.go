@@ -130,8 +130,10 @@ type HyprPanelOutput struct {
 }
 
 var (
-	// ANSI escape code pattern
-	ansiPattern = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+	// ANSI escape code pattern - handles CSI sequences and OSC sequences (terminal title, etc.)
+	// CSI: \x1B[ followed by parameters and command
+	// OSC: \x1B] followed by text and terminated by BEL (\x07) or ST (\x1B\\)
+	ansiPattern = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\))`)
 
 	// Account type patterns (case insensitive)
 	// v2.1.x format: "Claude Max" without leading ·
@@ -149,7 +151,8 @@ var (
 	minutesPattern = regexp.MustCompile(`(\d+)\s*m(?:in(?:utes?)?)?`)
 
 	// Absolute time patterns: "5:59am", "6am", "12:59pm", "6pm"
-	timeOnlyPattern = regexp.MustCompile(`\b(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
+	// Note: No leading \b because ANSI stripping may remove spaces (e.g., "Resets8pm")
+	timeOnlyPattern = regexp.MustCompile(`(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
 
 	// Full date pattern: "Jan 4, 2026, 12:59am" or "Jan 4, 2026, 1am"
 	fullDatePattern = regexp.MustCompile(`\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})(?::(\d{2}))?(am|pm)\b`)
@@ -552,7 +555,11 @@ func calculateNextResetRefresh(quotas []Quota) *time.Duration {
 }
 
 func parseQuotas(text string) []Quota {
-	lines := strings.Split(text, "\n")
+	// Normalize line endings: \r\n -> \n, then \r -> \n
+	// Claude CLI v2.1.11 uses \r for some line separators within quota sections
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
 	var quotas []Quota
 
 	quotaLabels := map[string]struct {
@@ -628,7 +635,10 @@ func parseEmail(text string) string {
 func parseOrganization(text string) string {
 	// Look for the pattern: "email@domain.com's\nOrganization" or "email@domain.com's Organization"
 	// The org name follows the email's possessive
-	lines := strings.Split(text, "\n")
+	// Normalize line endings for consistent parsing
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
 	for i, line := range lines {
 		// Look for email with 's at the end (possessive)
 		if strings.Contains(line, "@") && strings.Contains(line, "'s") {
@@ -685,7 +695,10 @@ func parseCostUsage(text string) *CostUsage {
 	}
 
 	// Find the extra usage section and look for cost pattern or unlimited
-	lines := strings.Split(text, "\n")
+	// Normalize line endings for consistent parsing
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
 	for i, line := range lines {
 		if strings.Contains(strings.ToLower(line), "extra usage") {
 			// Search within next 10 lines
