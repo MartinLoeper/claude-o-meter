@@ -755,7 +755,9 @@ func killProcessTree(pid int) {
 	if err != nil {
 		return // Process may have already exited
 	}
-	syscall.Kill(-pgid, syscall.SIGKILL)
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		log.Printf("failed to kill process group %d for pid %d: %v", pgid, pid, err)
+	}
 }
 
 func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (string, error) {
@@ -788,8 +790,12 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 	var stdout bytes.Buffer
 	var outputMu sync.Mutex
 
+	// Channel to signal when the reader goroutine is done
+	readerDone := make(chan struct{})
+
 	// Read from PTY in a goroutine
 	go func() {
+		defer close(readerDone)
 		buf := make([]byte, 4096)
 		for {
 			n, err := ptmx.Read(buf)
@@ -806,6 +812,14 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			}
 		}
 	}()
+
+	// Helper to wait for reader to finish (with timeout) after killing process
+	waitForReader := func() {
+		select {
+		case <-readerDone:
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 
 	// Create a channel to signal completion
 	done := make(chan error, 1)
@@ -843,6 +857,8 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			if cmd.Process != nil {
 				killProcessTree(cmd.Process.Pid)
 			}
+			// Wait for reader to finish capturing any remaining buffered data
+			waitForReader()
 			// Check if we got data before timing out
 			output := getOutput()
 			if hasUsageData(output) || hasAuthError(output) {
@@ -851,7 +867,8 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 			return output, fmt.Errorf("command timed out after %v", timeout)
 
 		case err := <-done:
-			// Command finished on its own
+			// Command finished on its own - wait for reader to capture remaining data
+			waitForReader()
 			output := getOutput()
 			if hasUsageData(output) || hasAuthError(output) {
 				return output, nil
@@ -870,6 +887,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 				if cmd.Process != nil {
 					killProcessTree(cmd.Process.Pid)
 				}
+				waitForReader()
 				return getOutput(), nil
 			}
 			// Also check for auth errors - no point waiting for usage data if not logged in
@@ -879,6 +897,7 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 				if cmd.Process != nil {
 					killProcessTree(cmd.Process.Pid)
 				}
+				waitForReader()
 				return getOutput(), nil
 			}
 		}
