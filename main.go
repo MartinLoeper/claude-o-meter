@@ -775,9 +775,10 @@ func executeClaudeCLI(ctx context.Context, timeout time.Duration, debug bool) (s
 	// Set environment to ensure PTY works without a controlling terminal
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
-	// Use Setpgid instead of Setsid so we can reliably kill the entire process group
-	// Pgid: 0 means the child becomes its own process group leader
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
+	// Note: pty.Start() internally sets Setsid: true, making the child a session
+	// leader (and thus process group leader). We can kill by process group using
+	// -pid since the child leads its own process group. Do NOT set Setpgid here
+	// as it conflicts with pty.Start()'s internal Setsid and causes EPERM.
 
 	// Start the command with a PTY
 	ptmx, err := pty.Start(cmd)
