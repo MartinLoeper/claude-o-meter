@@ -137,8 +137,9 @@ var (
 	ansiPattern = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\))`)
 
 	// Cursor movement pattern: \x1B[nC (cursor forward n positions)
+	// Also handles \x1B[C (no digit) which means forward 1 position per ANSI standard
 	// Used to replace cursor movements with spaces to preserve word boundaries
-	cursorForwardPattern = regexp.MustCompile(`\x1B\[(\d+)C`)
+	cursorForwardPattern = regexp.MustCompile(`\x1B\[(\d*)C`)
 
 	// Account type patterns (case insensitive)
 	// v2.1.x format: "Claude Max" without leading ·
@@ -208,18 +209,20 @@ func stripANSI(text string) string {
 	text = cursorForwardPattern.ReplaceAllStringFunc(text, func(match string) string {
 		matches := cursorForwardPattern.FindStringSubmatch(match)
 		if len(matches) > 1 {
-			n, _ := strconv.Atoi(matches[1])
+			// Empty string means no digit was provided, default to 1 per ANSI standard
+			n := 1
+			if matches[1] != "" {
+				n, _ = strconv.Atoi(matches[1])
+			}
 			// Model cursor movement: 0 -> no space, >0 -> proportional spaces with a safe upper bound
 			if n == 0 {
 				return ""
 			}
-			if n > 0 {
-				const maxSpaces = 100 // Reasonable limit to avoid memory issues
-				if n > maxSpaces {
-					n = maxSpaces
-				}
-				return strings.Repeat(" ", n)
+			const maxSpaces = 100 // Reasonable limit to avoid memory issues
+			if n > maxSpaces {
+				n = maxSpaces
 			}
+			return strings.Repeat(" ", n)
 		}
 		return " " // Default single space for malformed sequences
 	})
@@ -477,7 +480,8 @@ func looksLikeResetLine(lineLower string) bool {
 		return true
 	}
 	// Garbled patterns from cursor movement artifacts in Claude CLI v2.1.17+
-	// The word "Resets" may be rendered as "Rese s" (missing 't' due to cursor movements)
+	// The word "Resets" may be rendered as "Rese s" where cursor movement escape
+	// sequences create gaps in the word and can affect any character position.
 	// Look for "rese" followed by a time indicator (am/pm)
 	if strings.Contains(lineLower, "rese") &&
 		(strings.Contains(lineLower, "am") || strings.Contains(lineLower, "pm")) {
