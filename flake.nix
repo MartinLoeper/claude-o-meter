@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     claude-code = {
-      url = "github:sadjow/claude-code-nix?ref=v2.1.11";
+      url = "github:sadjow/claude-code-nix?ref=v2.1.17";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
