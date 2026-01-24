@@ -136,6 +136,11 @@ var (
 	// OSC: \x1B] followed by text and terminated by BEL (\x07) or ST (\x1B\\)
 	ansiPattern = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\))`)
 
+	// Cursor movement pattern: \x1B[nC (cursor forward n positions)
+	// Also handles \x1B[C (no digit) which means forward 1 position per ANSI standard
+	// Used to replace cursor movements with spaces to preserve word boundaries
+	cursorForwardPattern = regexp.MustCompile(`\x1B\[(\d*)C`)
+
 	// Account type patterns (case insensitive)
 	// v2.1.x format: "Claude Max" without leading ·
 	// v2.0.x format: "· claude max" with leading ·
@@ -198,6 +203,30 @@ var (
 )
 
 func stripANSI(text string) string {
+	// First, replace cursor forward sequences with appropriate spaces
+	// This preserves word boundaries that the terminal would display
+	// Claude CLI v2.1.17 uses \x1B[nC to render text with visual spacing
+	text = cursorForwardPattern.ReplaceAllStringFunc(text, func(match string) string {
+		matches := cursorForwardPattern.FindStringSubmatch(match)
+		if len(matches) > 1 {
+			// Empty string means no digit was provided, default to 1 per ANSI standard
+			n := 1
+			if matches[1] != "" {
+				n, _ = strconv.Atoi(matches[1])
+			}
+			// Model cursor movement: 0 -> no space, >0 -> proportional spaces with a safe upper bound
+			if n == 0 {
+				return ""
+			}
+			const maxSpaces = 100 // Reasonable limit to avoid memory issues
+			if n > maxSpaces {
+				n = maxSpaces
+			}
+			return strings.Repeat(" ", n)
+		}
+		return " " // Default single space for malformed sequences
+	})
+	// Then strip remaining ANSI codes
 	return ansiPattern.ReplaceAllString(text, "")
 }
 
@@ -441,6 +470,26 @@ func isQuotaSectionMarker(lineLower string) bool {
 	return false
 }
 
+// looksLikeResetLine checks if a line appears to be a reset time line.
+// Handles both normal "reset"/"renew" keywords and garbled text from
+// cursor movement artifacts (e.g., "rese s" instead of "resets").
+// The input should already be lowercase for efficiency.
+func looksLikeResetLine(lineLower string) bool {
+	// Standard keywords
+	if strings.Contains(lineLower, "reset") || strings.Contains(lineLower, "renew") {
+		return true
+	}
+	// Garbled patterns from cursor movement artifacts in Claude CLI v2.1.17+
+	// The word "Resets" may be rendered as "Rese s" where cursor movement escape
+	// sequences create gaps in the word and can affect any character position.
+	// Look for "rese" followed by a time indicator (am/pm)
+	if strings.Contains(lineLower, "rese") &&
+		(strings.Contains(lineLower, "am") || strings.Contains(lineLower, "pm")) {
+		return true
+	}
+	return false
+}
+
 func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
 	// Look within next 14 lines for reset information, but stop if we hit another quota section
 	endIdx := startIdx + 14
@@ -456,7 +505,7 @@ func parseResetTime(lines []string, startIdx int) (string, *time.Time, *int64) {
 			break
 		}
 
-		if strings.Contains(line, "reset") || strings.Contains(line, "renew") {
+		if looksLikeResetLine(line) {
 			// First try parsing relative duration components
 			var totalSeconds int64
 
