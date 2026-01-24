@@ -209,11 +209,19 @@ func stripANSI(text string) string {
 		matches := cursorForwardPattern.FindStringSubmatch(match)
 		if len(matches) > 1 {
 			n, _ := strconv.Atoi(matches[1])
-			if n > 0 && n <= 10 { // Reasonable limit to avoid memory issues
+			// Model cursor movement: 0 -> no space, >0 -> proportional spaces with a safe upper bound
+			if n == 0 {
+				return ""
+			}
+			if n > 0 {
+				const maxSpaces = 100 // Reasonable limit to avoid memory issues
+				if n > maxSpaces {
+					n = maxSpaces
+				}
 				return strings.Repeat(" ", n)
 			}
 		}
-		return " " // Default single space
+		return " " // Default single space for malformed sequences
 	})
 	// Then strip remaining ANSI codes
 	return ansiPattern.ReplaceAllString(text, "")
@@ -462,6 +470,7 @@ func isQuotaSectionMarker(lineLower string) bool {
 // looksLikeResetLine checks if a line appears to be a reset time line.
 // Handles both normal "reset"/"renew" keywords and garbled text from
 // cursor movement artifacts (e.g., "rese s" instead of "resets").
+// The input should already be lowercase for efficiency.
 func looksLikeResetLine(lineLower string) bool {
 	// Standard keywords
 	if strings.Contains(lineLower, "reset") || strings.Contains(lineLower, "renew") {
