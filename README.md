@@ -26,7 +26,8 @@ claude-o-meter scrapes output from the Claude CLI, so it depends on specific Cla
 
 | claude-o-meter | Claude Code | Status    |
 |----------------|-------------|-----------|
-| 2.1.17-X       | 2.1.11 - 2.1.17 | Tested :white_check_mark: |
+| 2.1.17-X       | 2.1.17      | Tested :white_check_mark: |
+| 2.1.11-X       | 2.1.11 - 2.1.16 | Tested :white_check_mark: |
 | 2.1.1-X        | 2.1.0, 2.1.1 | Tested :white_check_mark: |
 | 2.0.76-X       | 2.0.76      | Tested :white_check_mark: |
 
