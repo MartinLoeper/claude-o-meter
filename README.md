@@ -1,6 +1,6 @@
 # claude-o-meter
 
-**Note: Not only is it extreme hard to keep track with the weekly changing claude code output, but anthropic also rate limited the /usage command severely. This makes this tool unfortunately completely unusable. Thanks anthropic for not giving us any alternatives whatsoever.**
+**Note: Not only is it extremely hard to keep track with the weekly changing claude code output, but anthropic also rate limited the /usage command severely. This makes this tool unfortunately completely unusable. Thanks anthropic for not giving us any alternatives whatsoever.**
 
 A CLI tool that extracts Claude usage metrics as JSON by parsing the output of `claude /usage`. Use it to display your Claude plan usage in status bars like [HyprPanel](https://hyprpanel.com/). Currently ships with NixOS installation instructions—PRs for other Linux distros are welcome!
 
